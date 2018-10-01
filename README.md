@@ -86,7 +86,7 @@ Finally, update your `AndroidManifest.xml` with updates to `<uses-permissions>` 
 To fully leverage the AWS Amplify CLI toolchain, let's install the AWS Amplify CLI. Open your Terminal, and run the following in command line:
 
 ```bash
-$npm install -g @aws-amplify/cli
+$npm install -g @aws-amplify/cli -update
 ```
 
 ### Initializing the AWS Amplify Project
@@ -150,7 +150,7 @@ You will be prompted with your added changes:
 ```
 | Category | Resource name          | Operation | Provider plugin   |
 | -------- | ---------------------- | --------- | ----------------- |
-| Auth     | cognito409511b9        | Create    | awscloudformation |
+| Auth     | cognito12345678        | Create    | awscloudformation |
 | Api      | AmplifyAndroidWorkshop | Create    | awscloudformation |
 ```
 - Are you sure you want to continue? (Y/n) __Y__
@@ -255,7 +255,7 @@ Now let's make the Authentication activity our launcher activity. Open `AndroidM
 
 Build and launch your app in your emulator. The SignIn UI shows up as follows:
 
-![SignIn UI](images/SigninUi.png)
+![SignIn UI](images/SigninUI.png)
 
 
 Now let's add a user. In your emulator, click `Create New Account`. Enter user name, choose a complex password (minimum length 8, includes uppercase letters, lowercase letters, special characters, and numbers). Enter a valid email so you can receive the verification code.
