@@ -5,6 +5,16 @@ In this workshop we'll learn how to build cloud-enabled Android mobile applicati
 ![](https://aws-amplify.github.io/images/layout/logo.png)
 ![](https://www.android.com/static/images/logos/logo-android_1x.png)
 
+### Topics we'll be covering:
+
+- [Add API, Authentication and Generate Client Code with AWS Amplify](https://github.com/janeshenamazon/amplify-android#adding-a-graphql-api-authentication-and-generate-client-code)
+- [Build the Android App](https://github.com/janeshenamazon/amplify-android#build-the-android-application)
+- [Query Data](https://github.com/janeshenamazon/amplify-android#query-for-data)
+- [Modify Data]
+- [Subscribe to Data Changes]
+(https://github.com/janeshenamazon/amplify-android#subscriptions)
+- Working with Storage
+
 
 ## Redeeming our AWS Credit   
 
@@ -86,7 +96,7 @@ Finally, update your `AndroidManifest.xml` with updates to `<uses-permissions>` 
 To fully leverage the AWS Amplify CLI toolchain, let's install the AWS Amplify CLI. Open your Terminal, and run the following in command line:
 
 ```bash
-$npm install -g @aws-amplify/cli -update
+npm install -g @aws-amplify/cli -update
 ```
 
 ### Initializing the AWS Amplify Project
@@ -96,7 +106,7 @@ Next, let's initialize a new AWS Amplify project for your Android app.
 `cd` into your Android Studio project root in a Terminal window, and run the following:
 
 ```bash
-$amplify init
+amplify init
 ```
 
 - Choose your default editor: __Visual Studio Code (or your favorite editor)__   
@@ -113,7 +123,7 @@ CloudFormation will now run for your AWS account to configure the initial infras
 The AWS Amplify toolchain provides us with a streamlined process for API creation, authentication and client code generation. Let's start by running the following command in your app's **root** directory:
 
 ```bash
-$amplify add api
+amplify add api
 ```
 
 Answer the following questions:
@@ -142,7 +152,7 @@ Answer the following questions:
 Next, let's push the configuration to your AWS account by running:
 
 ```bash
-$amplify push
+amplify push
 ```
 
 You will be prompted with your added changes:
@@ -497,7 +507,7 @@ private GraphQLCall.Callback<ListPostsQuery.Data> queryCallback = new GraphQLCal
 
 `09-28 10:32:16.789 11605-11699/com.example.demo.myapplication I/MainActivity: Retrieved list items: []`
 
-### Add Mutations
+### Modify Data: Add a Post
 
 Now let's add the ability to add a post.
 
@@ -727,7 +737,7 @@ Now let's test it out. Build and run our app on your emulator. Next let's start 
 Add another Post in one of the apps, and watch it appear on the other app. Viola! 
 
 
-### S3 Storage Object
+### Working with Storage
 TODO
 
 ## Removing Services
@@ -735,15 +745,15 @@ TODO
 If at any time, or at the end of this workshop, you would like to delete a service from your project & your account, you can do this by running the `amplify remove` command:
 
 ```sh
-$amplify remove api
+amplify remove api
 
-$amplify push
+amplify push
 ```
 
 If you are unsure of what services you have enabled at any time, you can run the `amplify status` command:
 
 ```sh
-$amplify status
+amplify status
 ```
 
 `amplify status` will give you the list of resources that are currently enabled in your app.
