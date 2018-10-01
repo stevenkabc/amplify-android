@@ -10,9 +10,8 @@ In this workshop we'll learn how to build cloud-enabled Android mobile applicati
 - [Add API, Authentication and Generate Client Code with AWS Amplify](https://github.com/janeshenamazon/amplify-android#adding-a-graphql-api-authentication-and-generate-client-code)
 - [Build the Android App](https://github.com/janeshenamazon/amplify-android#build-the-android-application)
 - [Query Data](https://github.com/janeshenamazon/amplify-android#query-for-data)
-- [Modify Data]
-- [Subscribe to Data Changes]
-(https://github.com/janeshenamazon/amplify-android#subscriptions)
+- [Modify Data](https://github.com/janeshenamazon/amplify-android#modify-data-add-a-post)
+- [Subscribe to Data Changes](https://github.com/janeshenamazon/amplify-android#subscriptions)
 - Working with Storage
 
 
