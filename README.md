@@ -735,9 +735,9 @@ TODO
 If at any time, or at the end of this workshop, you would like to delete a service from your project & your account, you can do this by running the `amplify remove` command:
 
 ```sh
-$$amplify remove api
+$amplify remove api
 
-amplify push
+$amplify push
 ```
 
 If you are unsure of what services you have enabled at any time, you can run the `amplify status` command:
