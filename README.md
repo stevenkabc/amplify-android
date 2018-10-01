@@ -726,7 +726,6 @@ Now let's test it out. Build and run our app on your emulator. Next let's start 
 
 Add another Post in one of the apps, and watch it appear on the other app. Viola! 
 
-Try to add a Subscription for UpdatePostMutation as well yourself!
 
 ### S3 Storage Object
 TODO
