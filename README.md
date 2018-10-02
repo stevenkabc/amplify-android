@@ -280,10 +280,6 @@ After you successfully sign in, you should see a blank screen, which is our `Mai
 
 > To view the new user that was created in the Cognito User Pool, go back to the dashboard at [https://console.aws.amazon.com/cognito/](https://console.aws.amazon.com/cognito/). Also be sure that your region is set correctly.
 
-### Access User Data
-
-TODO
-
 
 ### Create the AppSync Client
 
@@ -441,7 +437,7 @@ MyAdapter mAdapter;
 AWSAppSyncClient mAWSAppSyncClient;
 
 private List<ListPostsQuery.Item> mPosts;
-private final String TAG = "MainActivity";
+private final String TAG = MainActivity.class.getSimpleName();
 
 protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -558,61 +554,64 @@ This gives us basic input fields for title and content.
 Open `AddPostActivity.java`, and add the following code to read the text inputs, create a new Mutation which will create a new Post.
 
 ```java
+
+private static final String TAG = AddPostActivity.class.getSimpleName();
+
 @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_add_post);
+protected void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    setContentView(R.layout.activity_add_post);
 
-        Button btnAddItem = findViewById(R.id.btn_save);
-        btnAddItem.setOnClickListener(new View.OnClickListener() {
+    Button btnAddItem = findViewById(R.id.btn_save);
+    btnAddItem.setOnClickListener(new View.OnClickListener() {
 
+        @Override
+        public void onClick(View view) {
+            save();
+        }
+    });
+}
+
+private void save() {
+    final String title = ((EditText) findViewById(R.id.editTxt_title)).getText().toString();
+    final String content = ((EditText) findViewById(R.id.editText_content)).getText().toString();
+    
+    CreatePostInput input = CreatePostInput.builder()
+            .title(title)
+            .content(content)
+            .build();
+
+    CreatePostMutation addPostMutation = CreatePostMutation.builder()
+            .input(input)
+            .build();
+    ClientFactory.getInstance(this).mutate(addPostMutation).enqueue(mutateCallback);
+}
+
+// Mutation callback code
+private GraphQLCall.Callback<CreatePostMutation.Data> mutateCallback = new GraphQLCall.Callback<CreatePostMutation.Data>() {
+    @Override
+    public void onResponse(@Nonnull final Response<CreatePostMutation.Data> response) {
+        runOnUiThread(new Runnable() {
             @Override
-            public void onClick(View view) {
-                save();
+            public void run() {
+                Toast.makeText(AddPostActivity.this, "Added post", Toast.LENGTH_SHORT).show();
+                AddPostActivity.this.finish();
             }
         });
     }
 
-    private void save() {
-        final String title = ((EditText) findViewById(R.id.editTxt_title)).getText().toString();
-        final String content = ((EditText) findViewById(R.id.editText_content)).getText().toString();
-        
-        CreatePostInput input = CreatePostInput.builder()
-                .title(title)
-                .content(content)
-                .build();
-
-        CreatePostMutation addPostMutation = CreatePostMutation.builder()
-                .input(input)
-                .build();
-        ClientFactory.getInstance(this).mutate(addPostMutation).enqueue(mutateCallback);
+    @Override
+    public void onFailure(@Nonnull final ApolloException e) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Log.e("", "Failed to perform AddPostMutation", e);
+                Toast.makeText(AddPostActivity.this, "Failed to add post", Toast.LENGTH_SHORT).show();
+                AddPostActivity.this.finish();
+            }
+        });
     }
-
-    // Mutation callback code
-    private GraphQLCall.Callback<CreatePostMutation.Data> mutateCallback = new GraphQLCall.Callback<CreatePostMutation.Data>() {
-        @Override
-        public void onResponse(@Nonnull final Response<CreatePostMutation.Data> response) {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Toast.makeText(AddPostActivity.this, "Added post", Toast.LENGTH_SHORT).show();
-                    AddPostActivity.this.finish();
-                }
-            });
-        }
-
-        @Override
-        public void onFailure(@Nonnull final ApolloException e) {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    Log.e("", "Failed to perform AddPostMutation", e);
-                    Toast.makeText(AddPostActivity.this, "Failed to add post", Toast.LENGTH_SHORT).show();
-                    AddPostActivity.this.finish();
-                }
-            });
-        }
-    };
+};
 
 ```
 
@@ -666,6 +665,90 @@ Press `Save` to send the mutation along to create a Post. The creation should be
 
 ![Post Added](images/PostAdded.png)
 
+
+### Optimistic Update: Offline Support
+
+In an optimistic update, we configure the UI so that it behaves as if the server will eventually return the data we expect. It is being optimistic that the update is successful. Here, we create the data expected to be returned after the mutation. The optimistic updates are written to the persistent SQL store the Android device manages. This provides a more responsive end user experience.
+
+This approach works well with the scenario where the Internet connectivity is cutoff while we are trying to modify data. AppSync SDK will automatically reconnect and re-send the mutation once the app goes online.
+
+Now let's try it out. Open `AddPostActivity.java`, and add the last 2 lines in the `save()` method:
+
+```java
+
+private void save() {
+        // ... Other code ...
+
+        ClientFactory.getInstance(this).mutate(addPostMutation).
+                refetchQueries(ListPostsQuery.builder().build()).
+                enqueue(mutateCallback);
+
+        // The following 2 lines enables offline support via an optimistic update
+        CreatePostMutation.Data expected = new CreatePostMutation.Data(new CreatePostMutation.CreatePost(
+                "Post", UUID.randomUUID().toString(), title, content));
+
+        // Add to event list while offline or before request returns
+        addPostOffline(expected);
+}
+```
+
+Now let's add the `addPostOffline` method. We check for connectivity after writing to the local cache, and close the Activity as if the add has been successful.
+
+```java
+private void addPostOffline(final CreatePostMutation.Data pendingItem) {
+    final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
+    final ListPostsQuery listEventsQuery = ListPostsQuery.builder().build();
+
+    final CreatePostMutation.CreatePost createPost = pendingItem.createPost();
+
+    awsAppSyncClient.query(listEventsQuery)
+            .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
+            .enqueue(new GraphQLCall.Callback<ListPostsQuery.Data>() {
+                @Override
+                public void onResponse(@Nonnull Response<ListPostsQuery.Data> response) {
+                    List<ListPostsQuery.Item> items = new ArrayList<>();
+                    if (response.data() != null) {
+                        items.addAll(response.data().listPosts().items());
+                    }
+
+                    items.add(new ListPostsQuery.Item(createPost.__typename(),
+                            createPost.id(),
+                            createPost.title(),
+                            createPost.content()));
+                    ListPostsQuery.Data data = new ListPostsQuery.Data(new ListPostsQuery.ListPosts("ListPost", items, null));
+                    awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
+                    Log.d(TAG, "Successfully wrote item to local store while being offline.");
+
+                    closeAppIfOffline();
+                }
+
+                @Override
+                public void onFailure(@Nonnull ApolloException e) {
+                    Log.e(TAG, "Failed to update event query list.", e);
+                }
+            });
+}
+
+private void closeAppIfOffline(){
+    // Close the add activity when offline otherwise allow callback to close
+    ConnectivityManager cm =
+            (ConnectivityManager) getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+
+    NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+    boolean isConnected = activeNetwork != null &&
+            activeNetwork.isConnectedOrConnecting();
+
+    if (!isConnected) {
+        Log.d(TAG, "App is offline. Returning to MainActivity .");
+        finish();
+    }
+}
+
+```
+
+We don't need to change `MainActivity` because its `query()` method uses the `CACHE_AND_NETWORK` approach. It reads from the local cache first while making a network call, and our previously added post already exists in the local cache.
+
+Build and run the app. Turn Airplane mode on to see how the UI responds when adding a new item. Turn Airplane mode off, and you should see the mutation being sent to the server automatically. 
 
 ### Subscriptions
 
