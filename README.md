@@ -10,7 +10,7 @@ In this workshop we'll learn how to build cloud-enabled Android mobile applicati
 - [Add API, Authentication and Generate Client Code with AWS Amplify](https://github.com/janeshenamazon/amplify-android#adding-a-graphql-api-authentication-and-generate-client-code)
 - [Build the Android App](https://github.com/janeshenamazon/amplify-android#build-the-android-application)
 - [Query Data](https://github.com/janeshenamazon/amplify-android#query-for-data)
-- [Modify Data](https://github.com/janeshenamazon/amplify-android#modify-data-add-a-post)
+- [Modify Data](https://github.com/janeshenamazon/amplify-android#modify-data-add-a-pet)
 - [Subscribe to Data Changes](https://github.com/janeshenamazon/amplify-android#subscriptions)
 - Working with Storage
 
@@ -139,10 +139,10 @@ Answer the following questions:
   When prompted, update the schema to the following:   
 
   ```graphql
-  type Post @model {
+  type Pet @model {
     id: ID!
-    title: String!
-    content: String
+    name: String!
+    description: String
   }
   ```
 
@@ -205,7 +205,7 @@ Open your app's `build.gradle`, and add the following dependencies:
     implementation('com.amazonaws:aws-android-sdk-auth-ui:2.6.+@aar') { transitive = true }
 ```
 
-Right click on your application directory, select **New** -> **Activity** -> **Empty Activity**. Name your activity `AuthenticationActivity`, check the checkbox `Launcher activity`, and click **Finish**.
+Right click on your application directory, select **New** -> **Activity** -> **Empty Activity**. Name your activity `AuthenticationActivity`, check the checkbox **Launcher Activity**, and click **Finish**.
 
 In `AuthenticationActivity.java` class, modify the class to be following:
 
@@ -242,7 +242,7 @@ public class AuthenticationActivity extends AppCompatActivity {
 
 ```
 
-Now let's make the Authentication activity our launcher activity. Open `AndroidManifest.xml`, ensure the `<intent-filter>` block is specified for the `AuthenticationActivity` as follows:
+Now let's make sure the Authentication activity is our launcher activity. Open `AndroidManifest.xml`, ensure the `<intent-filter>` block is specified for the `AuthenticationActivity` as follows. You can also remove the `<intent-filter>` and `android:theme` for `MainActivity`.
 
 ```xml
 <!-- ... Other Code... -->
@@ -354,14 +354,14 @@ Switch to the `Text` view of `recyclerview_row.xml`, and modify the layout as fo
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:paddingLeft="10dp"
-        android:id="@+id/txt_title"
+        android:id="@+id/txt_name"
         />
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:paddingLeft="10dp"
-        android:id="@+id/txt_content"
+        android:id="@+id/txt_description"
         />
 
 </LinearLayout>
@@ -371,9 +371,21 @@ Switch to the `Text` view of `recyclerview_row.xml`, and modify the layout as fo
 Since we are using a RecyclerView, we need to provide an Adapter for it. Add a new Java class `MyAdapter.java` as below which extends `RecyclerView.Adapter`:
 
 ```java
+import android.content.Context;
+import android.support.v7.widget.RecyclerView;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+
+import com.amazonaws.amplify.generated.graphql.ListPetsQuery;
+
+import java.util.ArrayList;
+import java.util.List;
+
 public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
 
-    private List<ListPostsQuery.Item> mData = new ArrayList<>();;
+    private List<ListPetsQuery.Item> mData = new ArrayList<>();;
     private LayoutInflater mInflater;
 
 
@@ -392,9 +404,9 @@ public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
     // binds the data to the TextView in each row
     @Override
     public void onBindViewHolder(ViewHolder holder, int position) {
-        ListPostsQuery.Item item = mData.get(position);
-        holder.txt_title.setText(item.title());
-        holder.txt_content.setText(item.content());
+        ListPetsQuery.Item item = mData.get(position);
+        holder.txt_name.setText(item.name());
+        holder.txt_description.setText(item.description());
     }
 
     // total number of rows
@@ -404,95 +416,116 @@ public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
     }
 
     // resets the list with a new set of data
-    public void setItems(List<ListPostsQuery.Item> items) {
+    public void setItems(List<ListPetsQuery.Item> items) {
         mData = items;
     }
 
     // stores and recycles views as they are scrolled off screen
     class ViewHolder extends RecyclerView.ViewHolder {
-        TextView txt_title;
-        TextView txt_content;
+        TextView txt_name;
+        TextView txt_description;
 
         ViewHolder(View itemView) {
             super(itemView);
-            txt_title = itemView.findViewById(R.id.txt_title);
-            txt_content = itemView.findViewById(R.id.txt_content);
+            txt_name = itemView.findViewById(R.id.txt_name);
+            txt_description = itemView.findViewById(R.id.txt_description);
         }
     }
 }
 ```
 
-Note the class level variable `mData`. It is a list of type `ListPostsQuery.Item`, which is a generated GraphQL type based on our schema. 
+Note the class level variable `mData`. It is a list of type `ListPetsQuery.Item`, which is a generated GraphQL type based on our schema. 
 
 We have also exposed a `setItems` method, to allow outside re-setting of our data set.
 
 #### Build the screen to populate the RecyclerView
 
-Open `MainActivity.java`, modify the class to include the follows:
+Open `MainActivity.java`, modify the class to implement a `query` method and populate the `RecyclerView`:
 
 ```java
 
-RecyclerView mRecyclerView;
-MyAdapter mAdapter;
-AWSAppSyncClient mAWSAppSyncClient;
+import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 
-private List<ListPostsQuery.Item> mPosts;
-private final String TAG = MainActivity.class.getSimpleName();
+import com.amazonaws.amplify.generated.graphql.ListPetsQuery;
+import com.amazonaws.mobileconnectors.appsync.AWSAppSyncClient;
+import com.amazonaws.mobileconnectors.appsync.fetcher.AppSyncResponseFetchers;
+import com.apollographql.apollo.GraphQLCall;
+import com.apollographql.apollo.api.Response;
+import com.apollographql.apollo.exception.ApolloException;
 
-protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_main);
+import java.util.ArrayList;
+import java.util.List;
 
-    mRecyclerView = findViewById(R.id.recycler_view);
+import javax.annotation.Nonnull;
 
-    // use a linear layout manager
-    mRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+public class MainActivity extends AppCompatActivity {
 
-    // specify an adapter (see also next example)
-    mAdapter = new MyAdapter(this);
-    mRecyclerView.setAdapter(mAdapter);
+    RecyclerView mRecyclerView;
+    MyAdapter mAdapter;
+    AWSAppSyncClient mAWSAppSyncClient;
 
-    mAWSAppSyncClient = ClientFactory.getInstance(this);
+    private List<ListPetsQuery.Item> mPets;
+    private final String TAG = MainActivity.class.getSimpleName();
 
-    query();
-}
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
 
-@Override
-public void onResume() {
-    super.onResume();
+        mRecyclerView = findViewById(R.id.recycler_view);
 
-    // Refresh the list data when we return to the screen
-    query();
-}
+        // use a linear layout manager
+        mRecyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-public void query(){
-    mAWSAppSyncClient.query(ListPostsQuery.builder().build())
-            .responseFetcher(AppSyncResponseFetchers.CACHE_AND_NETWORK)
-            .enqueue(queryCallback);
-}
+        // specify an adapter (see also next example)
+        mAdapter = new MyAdapter(this);
+        mRecyclerView.setAdapter(mAdapter);
 
-private GraphQLCall.Callback<ListPostsQuery.Data> queryCallback = new GraphQLCall.Callback<ListPostsQuery.Data>() {
-    @Override
-    public void onResponse(@Nonnull Response<ListPostsQuery.Data> response) {
+        mAWSAppSyncClient = ClientFactory.getInstance(this);
 
-        mPosts = new ArrayList<>(response.data().listPosts().items());
-
-        Log.i(TAG, "Retrieved list items: " + mPosts.toString());
-
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                mAdapter.setItems(mPosts);
-                mAdapter.notifyDataSetChanged();
-            }
-        });
+        query();
     }
 
     @Override
-    public void onFailure(@Nonnull ApolloException e) {
-        Log.e(TAG, e.toString());
+    public void onResume() {
+        super.onResume();
+
+        // Refresh the list data when we return to the screen
+        query();
     }
-};
+
+    public void query(){
+        mAWSAppSyncClient.query(ListPetsQuery.builder().build())
+                .responseFetcher(AppSyncResponseFetchers.CACHE_AND_NETWORK)
+                .enqueue(queryCallback);
+    }
+
+    private GraphQLCall.Callback<ListPetsQuery.Data> queryCallback = new GraphQLCall.Callback<ListPetsQuery.Data>() {
+        @Override
+        public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+
+            mPets = new ArrayList<>(response.data().listPets().items());
+
+            Log.i(TAG, "Retrieved list items: " + mPets.toString());
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mAdapter.setItems(mPets);
+                    mAdapter.notifyDataSetChanged();
+                }
+            });
+        }
+
+        @Override
+        public void onFailure(@Nonnull ApolloException e) {
+            Log.e(TAG, e.toString());
+        }
+    };
+}
 
 ```
 
@@ -500,15 +533,15 @@ private GraphQLCall.Callback<ListPostsQuery.Data> queryCallback = new GraphQLCal
 
 **Build** your app again to ensure there are no errors. A blank screen still displays, but you should be able to see the log in the Logcat window indicating a query is completed successfully, similar to below:
 
-`09-28 10:32:16.789 11605-11699/com.example.demo.myapplication I/MainActivity: Retrieved list items: []`
+`09-28 10:32:16.789 11605-11699/com.example.demo.mypetapp I/MainActivity: Retrieved list items: []`
 
-### Modify Data: Add a Post
+### Modify Data: Add a Pet
 
-Now let's add the ability to add a post.
+Now let's add the ability to add a pet.
 
-Add a new `Empty Activity` via **New** -> **Activity** -> **Empty Activity**. Name the activity "AddPostActivity".
+Add a new `Empty Activity` via **New** -> **Activity** -> **Empty Activity**. Name the activity `AddPetActivity` and click **Finish**.
 
-Open layout file `activity_add_post.xml`, add the following layout inside of your existing `<android.support.constraint.ConstraintLayout>>`:
+Open layout file `activity_add_pet.xml`, add the following layout inside of your existing `<android.support.constraint.ConstraintLayout>>`:
 
 ```xml
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -517,111 +550,126 @@ Open layout file `activity_add_post.xml`, add the following layout inside of you
         android:orientation="vertical"
         android:layout_margin="15dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Title"
-            android:textSize="15sp"
-            />
-        <EditText
-            android:id="@+id/editTxt_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Content"
-            android:textSize="15sp" />
-
-        <EditText
-            android:id="@+id/editText_content"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <Button
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:id="@+id/btn_save"
-            android:layout_marginTop="15dp"
-            android:text="Save"/>
-    </LinearLayout>
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Name"
+        android:textSize="15sp"
+        />
+    <EditText
+        android:id="@+id/editTxt_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Description"
+        android:textSize="15sp" />
+    <EditText
+        android:id="@+id/editText_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/btn_save"
+        android:layout_marginTop="15dp"
+        android:text="Save"/>
+</LinearLayout>
 
 ```
 
-This gives us basic input fields for title and content.
+This gives us basic input fields for name and description of our pets.
 
-Open `AddPostActivity.java`, and add the following code to read the text inputs, create a new Mutation which will create a new Post.
+Open `AddPetActivity.java`, and add the following code to read the text inputs, create a new Mutation which will create a new Pet.
 
 ```java
+import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Toast;
 
-private static final String TAG = AddPostActivity.class.getSimpleName();
+import com.amazonaws.amplify.generated.graphql.CreatePetMutation;
+import com.apollographql.apollo.GraphQLCall;
+import com.apollographql.apollo.api.Response;
+import com.apollographql.apollo.exception.ApolloException;
 
-@Override
-protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_add_post);
+import javax.annotation.Nonnull;
 
-    Button btnAddItem = findViewById(R.id.btn_save);
-    btnAddItem.setOnClickListener(new View.OnClickListener() {
+import type.CreatePetInput;
+
+public class AddPetActivity extends AppCompatActivity {
+
+    private static final String TAG = AddPetActivity.class.getSimpleName();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_add_pet);
+
+        Button btnAddItem = findViewById(R.id.btn_save);
+        btnAddItem.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View view) {
+                save();
+            }
+        });
+    }
+
+    private void save() {
+        final String name = ((EditText) findViewById(R.id.editTxt_name)).getText().toString();
+        final String description = ((EditText) findViewById(R.id.editText_description)).getText().toString();
+
+        CreatePetInput input = CreatePetInput.builder()
+                .name(name)
+                .description(description)
+                .build();
+
+        CreatePetMutation addPetMutation = CreatePetMutation.builder()
+                .input(input)
+                .build();
+        ClientFactory.getInstance(this).mutate(addPetMutation).enqueue(mutateCallback);
+    }
+
+    // Mutation callback code
+    private GraphQLCall.Callback<CreatePetMutation.Data> mutateCallback = new GraphQLCall.Callback<CreatePetMutation.Data>() {
+        @Override
+        public void onResponse(@Nonnull final Response<CreatePetMutation.Data> response) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(AddPetActivity.this, "Added pet", Toast.LENGTH_SHORT).show();
+                    AddPetActivity.this.finish();
+                }
+            });
+        }
 
         @Override
-        public void onClick(View view) {
-            save();
+        public void onFailure(@Nonnull final ApolloException e) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Log.e("", "Failed to perform AddPetMutation", e);
+                    Toast.makeText(AddPetActivity.this, "Failed to add pet", Toast.LENGTH_SHORT).show();
+                    AddPetActivity.this.finish();
+                }
+            });
         }
-    });
+    };
 }
-
-private void save() {
-    final String title = ((EditText) findViewById(R.id.editTxt_title)).getText().toString();
-    final String content = ((EditText) findViewById(R.id.editText_content)).getText().toString();
-    
-    CreatePostInput input = CreatePostInput.builder()
-            .title(title)
-            .content(content)
-            .build();
-
-    CreatePostMutation addPostMutation = CreatePostMutation.builder()
-            .input(input)
-            .build();
-    ClientFactory.getInstance(this).mutate(addPostMutation).enqueue(mutateCallback);
-}
-
-// Mutation callback code
-private GraphQLCall.Callback<CreatePostMutation.Data> mutateCallback = new GraphQLCall.Callback<CreatePostMutation.Data>() {
-    @Override
-    public void onResponse(@Nonnull final Response<CreatePostMutation.Data> response) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                Toast.makeText(AddPostActivity.this, "Added post", Toast.LENGTH_SHORT).show();
-                AddPostActivity.this.finish();
-            }
-        });
-    }
-
-    @Override
-    public void onFailure(@Nonnull final ApolloException e) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                Log.e("", "Failed to perform AddPostMutation", e);
-                Toast.makeText(AddPostActivity.this, "Failed to add post", Toast.LENGTH_SHORT).show();
-                AddPostActivity.this.finish();
-            }
-        });
-    }
-};
-
 ```
 
-Now let's connect the `AddPostActivity` to our `MainActivity`.
+Now let's connect the `AddPetActivity` to our `MainActivity`.
 
-Open layout file `activity_mail.xml`, add the floating button after the `RecyclerView`:
+Open layout file `activity_main.xml`, replace the floating button with the following:
 
 ```xml
 <android.support.design.widget.FloatingActionButton
-        android:id="@+id/btn_addPost"
+        android:id="@+id/btn_addPet"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|right|end"
@@ -631,39 +679,38 @@ Open layout file `activity_mail.xml`, add the floating button after the `Recycle
 
 ```
 
-Open `MainActivity.java` again, modify the existing code in `onCreate` to start the `AddPostActivity` when the `addPost` button is pressed:
+Open `MainActivity.java` again, modify the existing code in `onCreate` to start the `AddPetActivity` when the `addPet` button is pressed:
 
 ```java
 
 protected void onCreate(Bundle savedInstanceState) {
 
-        //... Other code....
+    //... Other code....
 
-        FloatingActionButton btnAddPost = findViewById(R.id.btn_addPost);
-        btnAddPost.setOnClickListener(new View.OnClickListener() {
+    FloatingActionButton btnAddPet = findViewById(R.id.btn_addPet);
+      btnAddPet.setOnClickListener(new View.OnClickListener() {
 
-            @Override
-            public void onClick(View view) {
-                Intent updatePostIntent = new Intent(MainActivity.this, AddPostActivity.class);
-                MainActivity.this.startActivity(updatePostIntent);
-            }
-        });
+          @Override
+          public void onClick(View view) {
+              Intent addPetIntent = new Intent(MainActivity.this, AddPetActivity.class);
+              MainActivity.this.startActivity(addPetIntent);
+          }
+    });
 
-        query();
-        subscribe();
-    }
+    query();
+}
 
 ```
 
 Now let's build and launch project, and test out the adding functionality.
 
-Sign in with your previous created user name and password. Click the `+` floating button. You should see the screen to enter a title and a content. Enter some test value as below.
+Sign in with your previous created user name and password. Click the `+` floating button. You should see the screen to enter a name and a description. Enter some test value as below to add our first pet.
 
-![Add New Post](images/AddPost.png)
+![Add New Pet](images/AddPet.png)
 
-Press `Save` to send the mutation along to create a Post. The creation should be successful and we should be able to see our first created item displayed in the list. This is because we have previous specified in `onResume()` we do a re-fetch, so we have the most up-to-date data.
+Press `Save` to send the mutation along to create a Pet. The creation should be successful and we should be able to see our first created item displayed in the list. This is because we have previous specified in `onResume()` we do a re-fetch, so we have the most up-to-date data.
 
-![Post Added](images/PostAdded.png)
+![Pet Added](images/PetAdded.png)
 
 
 ### Optimistic Update: Offline Support
@@ -672,128 +719,128 @@ In an optimistic update, we configure the UI so that it behaves as if the server
 
 This approach works well with the scenario where the Internet connectivity is cutoff while we are trying to modify data. AppSync SDK will automatically reconnect and re-send the mutation once the app goes online.
 
-Now let's try it out. Open `AddPostActivity.java`, and add the last 2 lines in the `save()` method:
+Now let's try it out. Open `AddPetActivity.java`, modify the `mutate` call, and add the last 2 lines in the `save()` method:
 
 ```java
 
 private void save() {
         // ... Other code ...
 
-        ClientFactory.getInstance(this).mutate(addPostMutation).
-                refetchQueries(ListPostsQuery.builder().build()).
+        ClientFactory.getInstance(this).mutate(addPetMutation).
+                refetchQueries(ListPetsQuery.builder().build()).
                 enqueue(mutateCallback);
 
         // The following 2 lines enables offline support via an optimistic update
-        CreatePostMutation.Data expected = new CreatePostMutation.Data(new CreatePostMutation.CreatePost(
-                "Post", UUID.randomUUID().toString(), title, content));
+        CreatePetMutation.Data expected = new CreatePetMutation.Data(new CreatePetMutation.CreatePet(
+                "Pet", UUID.randomUUID().toString(), name, description));
 
         // Add to event list while offline or before request returns
-        addPostOffline(expected);
+        addPetOffline(expected);
 }
 ```
 
-Now let's add the `addPostOffline` method. We check for connectivity after writing to the local cache, and close the Activity as if the add has been successful.
+Now let's add the `addPetOffline` method. We check for connectivity after writing to the local cache, and close the Activity as if the add has been successful.
 
 ```java
-private void addPostOffline(final CreatePostMutation.Data pendingItem) {
-    final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
-    final ListPostsQuery listEventsQuery = ListPostsQuery.builder().build();
+private void addPetOffline(final CreatePetMutation.Data pendingItem) {
+        final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
+        final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
 
-    final CreatePostMutation.CreatePost createPost = pendingItem.createPost();
+        final CreatePetMutation.CreatePet createPet = pendingItem.createPet();
 
-    awsAppSyncClient.query(listEventsQuery)
-            .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
-            .enqueue(new GraphQLCall.Callback<ListPostsQuery.Data>() {
-                @Override
-                public void onResponse(@Nonnull Response<ListPostsQuery.Data> response) {
-                    List<ListPostsQuery.Item> items = new ArrayList<>();
-                    if (response.data() != null) {
-                        items.addAll(response.data().listPosts().items());
+        awsAppSyncClient.query(listEventsQuery)
+                .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
+                .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
+                    @Override
+                    public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+                        List<ListPetsQuery.Item> items = new ArrayList<>();
+                        if (response.data() != null) {
+                            items.addAll(response.data().listPets().items());
+                        }
+
+                        items.add(new ListPetsQuery.Item(createPet.__typename(),
+                                createPet.id(),
+                                createPet.name(),
+                                createPet.description()));
+                        ListPetsQuery.Data data = new ListPetsQuery.Data(new ListPetsQuery.ListPets("ListPets", items, null));
+                        awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
+                        Log.d(TAG, "Successfully wrote item to local store while being offline.");
+
+                        finishIfOffline();
                     }
 
-                    items.add(new ListPostsQuery.Item(createPost.__typename(),
-                            createPost.id(),
-                            createPost.title(),
-                            createPost.content()));
-                    ListPostsQuery.Data data = new ListPostsQuery.Data(new ListPostsQuery.ListPosts("ListPost", items, null));
-                    awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
-                    Log.d(TAG, "Successfully wrote item to local store while being offline.");
-
-                    closeAppIfOffline();
-                }
-
-                @Override
-                public void onFailure(@Nonnull ApolloException e) {
-                    Log.e(TAG, "Failed to update event query list.", e);
-                }
-            });
-}
-
-private void closeAppIfOffline(){
-    // Close the add activity when offline otherwise allow callback to close
-    ConnectivityManager cm =
-            (ConnectivityManager) getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
-
-    NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
-    boolean isConnected = activeNetwork != null &&
-            activeNetwork.isConnectedOrConnecting();
-
-    if (!isConnected) {
-        Log.d(TAG, "App is offline. Returning to MainActivity .");
-        finish();
+                    @Override
+                    public void onFailure(@Nonnull ApolloException e) {
+                        Log.e(TAG, "Failed to update event query list.", e);
+                    }
+                });
     }
-}
+
+    private void finishIfOffline(){
+        // Close the add activity when offline otherwise allow callback to close
+        ConnectivityManager cm =
+                (ConnectivityManager) getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        boolean isConnected = activeNetwork != null &&
+                activeNetwork.isConnectedOrConnecting();
+
+        if (!isConnected) {
+            Log.d(TAG, "App is offline. Returning to MainActivity .");
+            finish();
+        }
+    }
 
 ```
 
-We don't need to change `MainActivity` because its `query()` method uses the `CACHE_AND_NETWORK` approach. It reads from the local cache first while making a network call, and our previously added post already exists in the local cache.
+We don't need to change `MainActivity` because its `query()` method uses the `CACHE_AND_NETWORK` approach. It reads from the local cache first while making a network call, and our previously added pet already exists in the local cache via optimistic update.
 
 Build and run the app. Turn Airplane mode on to see how the UI responds when adding a new item. Turn Airplane mode off, and you should see the mutation being sent to the server automatically. 
 
 ### Subscriptions
 
-We want to have the real-time notification ability GraphQL offers us, so when someone else adds a new Post, we know about it right away. This can be done via a subscription. Let's add the following block at the end of the `MainActivity.java` class:
+We want to have the real-time notification ability GraphQL offers us, so when someone else adds a new Pet, we know about it right away. This can be done via a subscription. Let's add the following block at the end of the `MainActivity.java` class:
 
 ```java
 private AppSyncSubscriptionCall subscriptionWatcher;
 
-private void subscribe(){
-    OnCreatePostSubscription subscription = OnCreatePostSubscription.builder().build();
-    subscriptionWatcher = mAWSAppSyncClient.subscribe(subscription);
-    subscriptionWatcher.execute(subCallback);
-}
+    private void subscribe(){
+        OnCreatePetSubscription subscription = OnCreatePetSubscription.builder().build();
+        subscriptionWatcher = mAWSAppSyncClient.subscribe(subscription);
+        subscriptionWatcher.execute(subCallback);
+    }
 
-private AppSyncSubscriptionCall.Callback subCallback = new AppSyncSubscriptionCall.Callback() {
-    @Override
-    public void onResponse(@Nonnull Response response) {
-        Log.i("Response", "Received subscription notification: " + response.data().toString());
+    private AppSyncSubscriptionCall.Callback subCallback = new AppSyncSubscriptionCall.Callback() {
+        @Override
+        public void onResponse(@Nonnull Response response) {
+            Log.i("Response", "Received subscription notification: " + response.data().toString());
 
-        // Update UI with the newly added item
-        OnCreatePostSubscription.OnCreatePost data = ((OnCreatePostSubscription.Data)response.data()).onCreatePost();
-            final ListPostsQuery.Item addedItem = new ListPostsQuery.Item(data.__typename(), data.id(), data.title(), data.content());
+            // Update UI with the newly added item
+            OnCreatePetSubscription.OnCreatePet data = ((OnCreatePetSubscription.Data)response.data()).onCreatePet();
+            final ListPetsQuery.Item addedItem = new ListPetsQuery.Item(data.__typename(), data.id(), data.name(), data.description());
 
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    mPosts.add(addedItem);
-                    mAdapter.notifyItemInserted(mPosts.size() - 1);
+                    mPets.add(addedItem);
+                    mAdapter.notifyItemInserted(mPets.size() - 1);
                 }
             });
-    }
+        }
 
-    @Override
-    public void onFailure(@Nonnull ApolloException e) {
-        Log.e("Error", e.toString());
-    }
+        @Override
+        public void onFailure(@Nonnull ApolloException e) {
+            Log.e("Error", e.toString());
+        }
 
-    @Override
-    public void onCompleted() {
-        Log.i("Completed", "Subscription completed");
-    }
-};
+        @Override
+        public void onCompleted() {
+            Log.i("Completed", "Subscription completed");
+        }
+    };
 ```
 
-Then let's modify the `OnCreate` method to call `subscribe` to new post creations, also making sure we unsubscribe when we are done:
+Then let's modify the `OnCreate` method to call `subscribe` to new pet creations, also making sure we unsubscribe when we are done:
 
 ```java
 @Override
@@ -814,9 +861,9 @@ protected void onStop() {
 }
 ```
 
-Now let's test it out. Build and run our app on your emulator. Next let's start up a second emulator. To start a second emulator, ensure you have default unset (**Run** -> **Edit configurations** -> under **Android App** -> **app**, uncheck **Use same device for future launches** ), and have a different emulator device type in the AVD manager. Run the app, select your second emulator device, and have the app running side by side in these 2 emulators. Make sure you sign into both so you are looking at the list of Posts on both devices.
+Now let's test it out. Build and run our app on your emulator. Next let's start up a second emulator. To start a second emulator, ensure you have default unset (**Run** -> **Edit configurations** -> under **Android App** -> **app**, uncheck **Use same device for future launches** ), and have a different emulator device type in the AVD manager. Run the app, select your second emulator device, and have the app running side by side in these 2 emulators. Make sure you sign into both so you are looking at the list of Pets on both devices.
 
-Add another Post in one of the apps, and watch it appear on the other app. Viola! 
+Add another Pet in one of the apps, and watch it appear on the other app. Viola! 
 
 
 ### Working with Storage
