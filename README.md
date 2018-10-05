@@ -1450,7 +1450,10 @@ private void addPetOffline(final CreatePetInput input) {
 
 ```
 
-Now we're finally all done! Build and run the app again, and see if you can add a photo and see your lovely pet!
+Now we're finally all done! Build and run the app again, and see if you can add a photo and see your lovely pet! Something like this? 
+
+
+![Pets](images/Pets.png)
 
 
 ### Other Features
