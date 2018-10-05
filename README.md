@@ -196,10 +196,10 @@ Open your app's `build.gradle`, and add the following dependencies:
 
 ```
     // Mobile Client for initializing the SDK
-    implementation('com.amazonaws:aws-android-sdk-mobile-client:2.6.+@aar') { transitive = true }
+    implementation('com.amazonaws:aws-android-sdk-mobile-client:2.7.+@aar') { transitive = true }
 
     // Cognito UserPools for SignIn
-    implementation('com.amazonaws:aws-android-sdk-auth-userpools:2.6.+@aar') { transitive = true }
+    implementation('com.amazonaws:aws-android-sdk-auth-userpools:2.7.+@aar') { transitive = true }
 
     // Sign in UI Library
     implementation('com.amazonaws:aws-android-sdk-auth-ui:2.6.+@aar') { transitive = true }
@@ -354,6 +354,7 @@ Switch to the `Text` view of `recyclerview_row.xml`, and modify the layout as fo
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:paddingLeft="10dp"
+        android:textSize="15dp"
         android:id="@+id/txt_name"
         />
     <TextView
@@ -361,6 +362,7 @@ Switch to the `Text` view of `recyclerview_row.xml`, and modify the layout as fo
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
         android:paddingLeft="10dp"
+        android:textSize="15dp"
         android:id="@+id/txt_description"
         />
 
@@ -385,7 +387,7 @@ import java.util.List;
 
 public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
 
-    private List<ListPetsQuery.Item> mData = new ArrayList<>();;
+    private ArrayList<ListPetsQuery.Item> mData = new ArrayList<>();;
     private LayoutInflater mInflater;
 
 
@@ -468,7 +470,7 @@ public class MainActivity extends AppCompatActivity {
     MyAdapter mAdapter;
     AWSAppSyncClient mAWSAppSyncClient;
 
-    private List<ListPetsQuery.Item> mPets;
+    private ArrayList<ListPetsQuery.Item> mPets;
     private final String TAG = MainActivity.class.getSimpleName();
 
     protected void onCreate(Bundle savedInstanceState) {
@@ -485,15 +487,13 @@ public class MainActivity extends AppCompatActivity {
         mRecyclerView.setAdapter(mAdapter);
 
         mAWSAppSyncClient = ClientFactory.getInstance(this);
-
-        query();
     }
 
     @Override
     public void onResume() {
         super.onResume();
 
-        // Refresh the list data when we return to the screen
+        // Query list data when we return to the screen
         query();
     }
 
@@ -719,7 +719,7 @@ In an optimistic update, we configure the UI so that it behaves as if the server
 
 This approach works well with the scenario where the Internet connectivity is cutoff while we are trying to modify data. AppSync SDK will automatically reconnect and re-send the mutation once the app goes online.
 
-Now let's try it out. Open `AddPetActivity.java`, modify the `mutate` call, and add the last 2 lines in the `save()` method:
+Now let's try it out. Open `AddPetActivity.java`, and add the offline support at the end of `save()`:
 
 ```java
 
@@ -730,19 +730,24 @@ private void save() {
                 refetchQueries(ListPetsQuery.builder().build()).
                 enqueue(mutateCallback);
 
-        // The following 2 lines enables offline support via an optimistic update
-        CreatePetMutation.Data expected = new CreatePetMutation.Data(new CreatePetMutation.CreatePet(
-                "Pet", UUID.randomUUID().toString(), name, description));
-
+        // Enables offline support via an optimistic update
         // Add to event list while offline or before request returns
-        addPetOffline(expected);
+        addPetOffline(input);
 }
 ```
 
 Now let's add the `addPetOffline` method. We check for connectivity after writing to the local cache, and close the Activity as if the add has been successful.
 
 ```java
-private void addPetOffline(final CreatePetMutation.Data pendingItem) {
+private void addPetOffline(CreatePetInput input) {
+
+        CreatePetMutation.Data expected = new CreatePetMutation.Data(
+                new CreatePetMutation.CreatePet(
+                        "Pet",
+                        UUID.randomUUID().toString(),
+                        input.name(),
+                        input.description()));
+
         final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
         final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
 
@@ -850,7 +855,6 @@ protected void onCreate(Bundle savedInstanceState) {
 
     // ...other code omitted...
 
-    query();
     subscribe();
 }
 
@@ -867,7 +871,596 @@ Add another Pet in one of the apps, and watch it appear on the other app. Viola!
 
 
 ### Working with Storage
-TODO
+
+With Amplify, you can easily add object storage support using S3. Amplify manages the bucket provision and permission configuration for you automatically.
+
+#### Update Amplify
+
+To get started, let's modify our schema to add a `photo` property which will point to an image stored in S3.
+
+```graphql
+type Pet @model {
+  id: ID!
+  name: String!
+  description: String
+  photo: Photo @connection
+}
+
+type Photo @model {
+   bucket: String
+   key: String
+}
+```
+
+Note the `@connection` transformer. It connects the Photo object to its parent, so the parent object has become a complex object. After transformation, we will be able to create/update Pets with a nested Photo object.
+
+
+Next, go to our root directory, and run the following in command line:
+
+```bash
+amplify add storage
+```
+
+Answer the following questions:
+
+- Please select from one of the below mentioned services: __Content (Images, audio, video, etc.)__
+- Please provide a friendly name for your resource that will be used to label this category in the project: __MyPetAppResources__
+- Please provide bucket name: __mypetapp1246e0cde8074f78b94363dbe73f8adfdsfds__ (Or something unique)
+- Who should have access: __Auth users only__
+- What kind of access do you want for Authenticated users: __read/write__
+
+Then run 
+
+```
+amplify push
+```
+
+Select **Y** when prompted whether we want to update code and re-generate GraphQL statements. Press **Enter**, and wait for CloudFormation updates to finish. This will take a couple of minutes.
+
+
+#### Add Storage Dependencies
+
+Meanwhile, let's update our front end client code.
+
+
+Open `AndroidManifest.xml`, add the `TransferService` in our `<application>`:
+
+```xml
+<application>
+    <!-- ...other code... -->
+    <service android:name="com.amazonaws.mobileconnectors.s3.transferutility.TransferService" />
+</application>
+```
+
+Open your app's `build.gradle`, add the dependency for S3:
+
+```
+implementation 'com.amazonaws:aws-android-sdk-s3:2.7.+'
+```
+
+
+#### Add Photo Picking Code
+
+Next, open `AddPetActivity.java`, and add photo selection code:
+
+```java
+
+ // Photo selector application code.
+  private static int RESULT_LOAD_IMAGE = 1;
+  private String photoPath;
+
+  public void choosePhoto() {
+      Intent i = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+      startActivityForResult(i, RESULT_LOAD_IMAGE);
+  }
+
+  @Override
+  protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+      super.onActivityResult(requestCode, resultCode, data);
+      if (requestCode == RESULT_LOAD_IMAGE && resultCode == RESULT_OK && null != data) {
+          Uri selectedImage = data.getData();
+          String[] filePathColumn = {MediaStore.Images.Media.DATA};
+          Cursor cursor = getContentResolver().query(selectedImage,
+                  filePathColumn, null, null, null);
+          cursor.moveToFirst();
+          int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
+          String picturePath = cursor.getString(columnIndex);
+          cursor.close();
+          // String picturePath contains the path of selected Image
+          photoPath = picturePath;
+      }
+  }
+```
+
+We need to call the upload photo from the UI. Open `activity_add_pet.xml`, add a button before the Save button:
+
+```xml
+ <LinearLayout>
+ <!-- ... other code... -->
+  <Button
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:id="@+id/btn_add_photo"
+      android:layout_marginTop="15dp"
+      android:text="Add Photo"/>
+
+  <Button
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:id="@+id/btn_save"
+      android:layout_marginTop="15dp"
+      android:text="Save"/>
+</LinearLayout>
+```
+
+Now let's connect this button to our `choosePhoto()` method. Go back to `AddPetActivity.java`, modify `onCreate` to link the button, as well as set the S3 bucket name for later use:
+
+```java
+
+private String storageBucketName;
+
+@Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_add_pet);
+
+        AWSMobileClient.getInstance().initialize(this).execute();
+
+        Button btnAddItem = findViewById(R.id.btn_save);
+        btnAddItem.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View view) {
+                    save();
+            }
+        });
+
+        Button btnAddPhoto = findViewById(R.id.btn_add_photo);
+        btnAddPhoto.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View view) {
+                choosePhoto();
+            }
+        });
+
+        setStorageInfo();
+    }
+
+    private void setStorageInfo() {
+        JSONObject s3Config = new AWSConfiguration(this)
+                .optJsonObject("S3TransferUtility");
+        try {
+            storageBucketName = s3Config.getString("Bucket");
+        } catch (JSONException e) {
+            Log.e(TAG, "Can't find S3 bucket", e);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(AddPetActivity.this, "Error: Can't find S3 bucket. \nHave you run 'amplify add storage'? ", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+    }
+```
+
+**Build** and run the application to ensure the photo selection button works and you should be able to select a photo from your gallery. (No photo in the emulator? Open the browser and download one from the Internet!)
+
+#### Add S3 Photo Uploading Code 
+
+Here we will leverage `TransferUtility` to handle the S3 file upload and download. Let's add its initialization code to our ClientFactory class.
+
+`ClientFactory.java`
+```java
+
+private static volatile TransferUtility transferUtility;
+public static TransferUtility getTransferUtility(Context context) {
+    if (transferUtility == null) {
+        transferUtility = TransferUtility.builder()
+                .context(context)
+                .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
+                .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
+                .build();
+    }
+    return transferUtility;
+}
+
+```
+
+Next, let's add code to upload the photo leveraging the AWSMobileClient. 
+
+```java
+protected void onCreate(Bundle savedInstanceState) {
+
+    //...other code...
+
+    //Add this line at the end of method to initialize the AWSMobileClient
+    AWSMobileClient.getInstance().initialize(this).execute();
+}
+
+private String getS3Key(String localPath) {
+    //We have read and write ability under the public folder
+    return "public/" + new File(localPath).getName();
+}
+
+public void uploadWithTransferUtility(String localPath) {
+    String key = getS3Key(localPath);
+
+    Log.d(TAG, "Uploading file from " + localPath + " to " + key);
+
+    TransferObserver uploadObserver =
+            ClientFactory.getTransferUtility(this).upload(
+                    key,
+                    new File(localPath));
+
+    // Attach a listener to the observer to get state update and progress notifications
+    uploadObserver.setTransferListener(new TransferListener() {
+
+        @Override
+        public void onStateChanged(int id, TransferState state) {
+            if (TransferState.COMPLETED == state) {
+                // Handle a completed upload.
+                Log.d(TAG, "Upload is completed. ");
+
+                // Upload is successful. Save the rest and send the mutation to server.
+                save();
+            }
+        }
+
+        @Override
+        public void onProgressChanged(int id, long bytesCurrent, long bytesTotal) {
+            float percentDonef = ((float) bytesCurrent / (float) bytesTotal) * 100;
+            int percentDone = (int)percentDonef;
+
+            Log.d(TAG, "ID:" + id + " bytesCurrent: " + bytesCurrent
+                    + " bytesTotal: " + bytesTotal + " " + percentDone + "%");
+        }
+
+        @Override
+        public void onError(int id, Exception ex) {
+            // Handle errors
+            Log.e(TAG, "Failed to upload photo. ", ex);
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(AddPetActivity.this, "Failed to upload photo", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
+    });
+}
+
+```
+
+#### Save Photo in Mutation
+
+In order to handle saving photo elegantly, we need to refactor our code a little to accommodate the addition of a complex object.
+
+Extract the following method to produce different types of `CreatePetInput`s depending on whether a photo has been selected:
+
+```java
+private CreatePetInput getCreatePetInput() {
+    final String name = ((EditText) findViewById(R.id.editTxt_name)).getText().toString();
+    final String description = ((EditText) findViewById(R.id.editText_description)).getText().toString();
+
+    if (photoPath != null && !photoPath.isEmpty()){
+        final S3ObjectInput s3ObjectInput = S3ObjectInput.builder()
+                .bucket(storageBucketName)
+                .key(getS3Key(photoPath))
+                .region(region)
+                .localUri(photoPath)
+                .mimeType(JPG_MIME).build();
+
+        return CreatePetInput.builder()
+                .name(name)
+                .description(description)
+                .photo(s3ObjectInput).build();
+    } else {
+        return CreatePetInput.builder()
+                .name(name)
+                .description(description)
+                .build();
+    }
+}
+```
+
+Next modify our `save()` to call the extracted method:
+
+```java
+
+private void save() {
+    CreatePetInput input = getCreatePetInput();
+
+    CreatePetMutation addPetMutation = CreatePetMutation.builder()
+            .input(input)
+            .build();
+
+    ClientFactory.getInstance(this).mutate(addPetMutation).
+            refetchQueries(ListPetsQuery.builder().build()).
+            enqueue(mutateCallback);
+
+    // Enables offline support via an optimistic update
+    // Add to event list while offline or before request returns
+    addPetOffline(input);
+}
+```
+
+Then we can create a new method `uploadAndSave()` to handle both the photo and photo-less saves:
+
+```java
+
+private void uploadAndSave(){
+
+    if (photoPath != null) {
+      // For higher Android levels, we need to check permission at runtime
+      if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+              != PackageManager.PERMISSION_GRANTED) {
+          // Permission is not granted
+          Log.d(TAG, "READ_EXTERNAL_STORAGE permission not granted! Requesting...");
+          ActivityCompat.requestPermissions(this,
+                  new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
+                  1);
+      }
+
+      // Upload a photo first. We will only call save on its successful callback.
+      uploadWithTransferUtility(photoPath);
+    } else {
+        save();
+    }
+}
+
+```
+Now we can call our `uploadAndSave()` functions when the save button is clicked:
+
+```java
+
+protected void onCreate(Bundle savedInstanceState) {
+    // ... other code ...
+    btnAddItem.setOnClickListener(new View.OnClickListener() {
+
+        @Override
+        public void onClick(View view) {
+            uploadAndSave();
+        }
+    });
+```
+
+#### Download and Display Photos
+
+Now we have implemented ability to save photos, let's make sure they get downloaded and displayed.
+
+Open `recyclerview_row.xml`, add an `<ImageView>` and modify the layout as follows:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="10dp">
+
+    <ImageView
+        android:id="@+id/image_view"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:maxHeight="200dp"
+        android:paddingRight="50dp"/>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/txt_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textSize="15dp"
+            android:paddingLeft="10dp" />
+
+        <TextView
+            android:id="@+id/txt_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textSize="15dp"
+            android:paddingLeft="10dp" />
+    </LinearLayout>
+
+</LinearLayout>
+```
+
+Open `MyAdapter.java`, add code to correspond to the image:
+```java
+
+public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
+    //...other code
+    
+     // binds the data to the TextView in each row
+    @Override
+    public void onBindViewHolder(ViewHolder holder, int position) {
+        ListPetsQuery.Item item = mData.get(position);
+        holder.txt_name.setText(item.name());
+        holder.txt_description.setText(item.description());
+
+        if (item.photo() != null && item.photo().localUri() != null)
+            holder.image_view.setImageBitmap(BitmapFactory.decodeFile(item.photo().localUri()));
+    }
+
+    // ... other code ...
+
+    // stores and recycles views as they are scrolled off screen
+    class ViewHolder extends RecyclerView.ViewHolder {
+        TextView txt_name;
+        TextView txt_description;
+        ImageView image_view;
+
+        ViewHolder(View itemView) {
+            super(itemView);
+            txt_name = itemView.findViewById(R.id.txt_name);
+            txt_description = itemView.findViewById(R.id.txt_description);
+            image_view = itemView.findViewById(R.id.image_view);
+        }
+    }
+}
+```
+
+Go to `MainActivity.java`, modify the `queryCallback` so we proceed to download the photo after getting photo info from the API. We also add the utility call to download a file. 
+
+```java
+private GraphQLCall.Callback<ListPetsQuery.Data> queryCallback = new GraphQLCall.Callback<ListPetsQuery.Data>() {
+    @Override
+    public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+
+        // ... other code ...
+
+        for (ListPetsQuery.Item item : mPets){
+            // We only download the file if this callback is triggered by a network call
+            if (!response.fromCache() && item.photo() != null && item.photo().localUri() == null) {
+                downloadWithTransferUtility(item);
+            }
+        }
+    }
+};
+
+private void downloadWithTransferUtility(final ListPetsQuery.Item item) {
+
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED) {
+        Log.d(TAG, "WRITE_EXTERNAL_STORAGE permission not granted! Requesting...");
+        ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                2);
+    }
+
+    final String localPath = Environment.getExternalStoragePublicDirectory(
+            Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + "/" + item.photo().key();
+
+    TransferObserver downloadObserver =
+            ClientFactory.getTransferUtility(this).download(
+                    item.photo().key(),
+                    new File(localPath));
+
+    // Attach a listener to the observer to get state update and progress notifications
+    downloadObserver.setTransferListener(new TransferListener() {
+
+        @Override
+        public void onStateChanged(int id, TransferState state) {
+            if (TransferState.COMPLETED == state) {
+                // Handle a completed upload.
+                ListPetsQuery.Photo photo = new ListPetsQuery.Photo(
+                        item.photo().__typename(),
+                        item.photo().bucket(),
+                        item.photo().key(),
+                        item.photo().region(),
+                        localPath,
+                        "image/jpg");
+                final ListPetsQuery.Item updatedItem =
+                        new ListPetsQuery.Item(item.__typename(), 
+                                item.id(), item.name(), item.description(), photo);
+
+                int index = mPets.indexOf(item);
+                mPets.set(index, updatedItem);
+                mAdapter.notifyItemChanged(index);
+            }
+        }
+
+        @Override
+        public void onProgressChanged(int id, long bytesCurrent, long bytesTotal) {
+            float percentDonef = ((float) bytesCurrent / (float) bytesTotal) * 100;
+            int percentDone = (int) percentDonef;
+
+            Log.d(TAG, "   ID:" + id + "   bytesCurrent: " + bytesCurrent + "   bytesTotal: " + bytesTotal + " " + percentDone + "%");
+        }
+
+        @Override
+        public void onError(int id, Exception ex) {
+            // Handle errors
+            Log.e(TAG, "Unable to download the file.", ex);
+        }
+    });
+}
+
+```
+
+Lastly, let's update our offline code to display a photo even before it's uploaded fully. In `AddPetActivity.java`, modify `addPetOffline` as follows:
+
+```java
+private void addPetOffline(final CreatePetInput input) {
+
+        final CreatePetMutation.CreatePet expected =
+                new CreatePetMutation.CreatePet(
+                        "Pet",
+                        UUID.randomUUID().toString(),
+                        input.name(),
+                        input.description(),
+                        input.photo() != null?
+                                new CreatePetMutation.Photo(
+                                        "Photo",
+                                        input.photo().bucket(),
+                                        input.photo().key(),
+                                        input.photo().region(),
+                                        photoPath,
+                                        input.photo().mimeType())
+                                : null);
+
+        final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
+        final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
+
+        awsAppSyncClient.query(listEventsQuery)
+                .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
+                .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
+                    @Override
+                    public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+                        List<ListPetsQuery.Item> items = new ArrayList<>();
+                        if (response.data() != null) {
+                            items.addAll(response.data().listPets().items());
+                        }
+
+                        items.add(new ListPetsQuery.Item(expected.__typename(),
+                                expected.id(),
+                                expected.name(),
+                                expected.description(),
+                                expected.photo() != null ? new ListPetsQuery.Photo(
+                                        "Photo",
+                                        input.photo().bucket(),
+                                        input.photo().key(),
+                                        input.photo().region(),
+                                        photoPath,
+                                        input.photo().mimeType()) : null
+                                ));
+                        ListPetsQuery.Data data = new ListPetsQuery.Data(
+                                new ListPetsQuery.ListPets("ListPets", items, null));
+                        awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
+                        Log.d(TAG, "Successfully wrote item to local store while being offline.");
+
+                        finishIfOffline();
+                    }
+
+                    @Override
+                    public void onFailure(@Nonnull ApolloException e) {
+                        Log.e(TAG, "Failed to update event query list.", e);
+                    }
+                });
+    }
+
+```
+
+Now we're finally all done! Build and run the app again, and see if you can add a photo and see your lovely pet!
+
+
+### Other Features
+
+There are other enhancements we can make to the app. Try to work on the following as practice yourself:
+- Add capability to update a pet's information
+- Add ability to delete a pet
+- Subscribe to update and delete mutations
+- Add pagination when there are more than 1 page of pets to display
+
 
 ## Removing Services
 

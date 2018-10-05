@@ -1,10 +1,12 @@
 package com.example.demo.mypetapp;
 
 import android.content.Context;
+import android.graphics.BitmapFactory;
 import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.amazonaws.amplify.generated.graphql.ListPetsQuery;
@@ -36,6 +38,9 @@ public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
         ListPetsQuery.Item item = mData.get(position);
         holder.txt_name.setText(item.name());
         holder.txt_description.setText(item.description());
+
+        if (item.photo() != null && item.photo().localUri() != null)
+            holder.image_view.setImageBitmap(BitmapFactory.decodeFile(item.photo().localUri()));
     }
 
     // total number of rows
@@ -53,11 +58,13 @@ public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
     class ViewHolder extends RecyclerView.ViewHolder {
         TextView txt_name;
         TextView txt_description;
+        ImageView image_view;
 
         ViewHolder(View itemView) {
             super(itemView);
             txt_name = itemView.findViewById(R.id.txt_name);
             txt_description = itemView.findViewById(R.id.txt_description);
+            image_view = itemView.findViewById(R.id.image_view);
         }
     }
 }

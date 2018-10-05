@@ -1,8 +1,13 @@
 package com.example.demo.mypetapp;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.support.design.widget.FloatingActionButton;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
@@ -11,15 +16,19 @@ import android.view.View;
 
 import com.amazonaws.amplify.generated.graphql.ListPetsQuery;
 import com.amazonaws.amplify.generated.graphql.OnCreatePetSubscription;
+import com.amazonaws.mobile.client.AWSMobileClient;
 import com.amazonaws.mobileconnectors.appsync.AWSAppSyncClient;
 import com.amazonaws.mobileconnectors.appsync.AppSyncSubscriptionCall;
 import com.amazonaws.mobileconnectors.appsync.fetcher.AppSyncResponseFetchers;
+import com.amazonaws.mobileconnectors.s3.transferutility.TransferListener;
+import com.amazonaws.mobileconnectors.s3.transferutility.TransferObserver;
+import com.amazonaws.mobileconnectors.s3.transferutility.TransferState;
 import com.apollographql.apollo.GraphQLCall;
 import com.apollographql.apollo.api.Response;
 import com.apollographql.apollo.exception.ApolloException;
 
+import java.io.File;
 import java.util.ArrayList;
-import java.util.List;
 
 import javax.annotation.Nonnull;
 
@@ -29,7 +38,7 @@ public class MainActivity extends AppCompatActivity {
     MyAdapter mAdapter;
     AWSAppSyncClient mAWSAppSyncClient;
 
-    private List<ListPetsQuery.Item> mPets;
+    private ArrayList<ListPetsQuery.Item> mPets;
     private final String TAG = MainActivity.class.getSimpleName();
 
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,6 +56,8 @@ public class MainActivity extends AppCompatActivity {
 
         mAWSAppSyncClient = ClientFactory.getInstance(this);
 
+        AWSMobileClient.getInstance().initialize(this).execute();
+
         FloatingActionButton btnAddPet = findViewById(R.id.btn_addPet);
         btnAddPet.setOnClickListener(new View.OnClickListener() {
 
@@ -57,7 +68,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        query();
         subscribe();
     }
 
@@ -96,6 +106,14 @@ public class MainActivity extends AppCompatActivity {
                     mAdapter.notifyDataSetChanged();
                 }
             });
+
+
+            for (ListPetsQuery.Item item : mPets) {
+                // We only download the file if this callback is triggered by a network call
+                if (!response.fromCache() && item.photo() != null && item.photo().localUri() == null) {
+                    downloadWithTransferUtility(item);
+                }
+            }
         }
 
         @Override
@@ -119,7 +137,9 @@ public class MainActivity extends AppCompatActivity {
 
             // Update UI with the newly added item
             OnCreatePetSubscription.OnCreatePet data = ((OnCreatePetSubscription.Data)response.data()).onCreatePet();
-            final ListPetsQuery.Item addedItem = new ListPetsQuery.Item(data.__typename(), data.id(), data.name(), data.description());
+
+            final ListPetsQuery.Item addedItem =
+                    new ListPetsQuery.Item(data.__typename(), data.id(), data.name(), data.description(), null);
 
             runOnUiThread(new Runnable() {
                 @Override
@@ -140,4 +160,65 @@ public class MainActivity extends AppCompatActivity {
             Log.i("Completed", "Subscription completed");
         }
     };
+
+
+    private void downloadWithTransferUtility(final ListPetsQuery.Item item) {
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            // Permission is not granted
+            Log.d(TAG, "WRITE_EXTERNAL_STORAGE permission not granted! Requesting...");
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    2);
+        }
+
+        final String localPath = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + "/" + item.photo().key();
+
+        TransferObserver downloadObserver =
+                ClientFactory.getTransferUtility(this).download(
+                        item.photo().key(),
+                        new File(localPath));
+
+        // Attach a listener to the observer to get state update and progress notifications
+        downloadObserver.setTransferListener(new TransferListener() {
+
+            @Override
+            public void onStateChanged(int id, TransferState state) {
+                if (TransferState.COMPLETED == state) {
+                    // Handle a completed upload.
+                    ListPetsQuery.Photo photo = new ListPetsQuery.Photo(
+                            item.photo().__typename(),
+                            item.photo().bucket(),
+                            item.photo().key(),
+                            item.photo().region(),
+                            localPath,
+                            "image/jpg");
+                    final ListPetsQuery.Item updatedItem =
+                            new ListPetsQuery.Item(item.__typename(),
+                                    item.id(), item.name(), item.description(), photo);
+
+                    int index = mPets.indexOf(item);
+                    mPets.set(index, updatedItem);
+                    mAdapter.notifyItemChanged(index);
+                }
+            }
+
+            @Override
+            public void onProgressChanged(int id, long bytesCurrent, long bytesTotal) {
+                float percentDonef = ((float) bytesCurrent / (float) bytesTotal) * 100;
+                int percentDone = (int) percentDonef;
+
+                Log.d(TAG, "   ID:" + id + "   bytesCurrent: " + bytesCurrent + "   bytesTotal: " + bytesTotal + " " + percentDone + "%");
+            }
+
+            @Override
+            public void onError(int id, Exception ex) {
+                // Handle errors
+                Log.e(TAG, "Unable to download the file.", ex);
+            }
+
+        });
+    }
 }
