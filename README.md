@@ -12,7 +12,7 @@ In this workshop we'll learn how to build cloud-enabled Android mobile applicati
 - [Query Data](https://github.com/janeshenamazon/amplify-android#query-for-data)
 - [Modify Data](https://github.com/janeshenamazon/amplify-android#modify-data-add-a-pet)
 - [Subscribe to Data Changes](https://github.com/janeshenamazon/amplify-android#subscriptions)
-- Working with Storage
+- [Working with Storage](https://github.com/janeshenamazon/amplify-android#working-with-storage)
 
 
 ## Redeeming our AWS Credit   
@@ -883,17 +883,17 @@ type Pet @model {
   id: ID!
   name: String!
   description: String
-  photo: Photo @connection
+  photo: S3Object
 }
 
-type Photo @model {
-   bucket: String
-   key: String
+type S3Object {
+  bucket: String!
+  key: String!
+  region: String!
+  localUri: String
+  mimeType: String
 }
 ```
-
-Note the `@connection` transformer. It connects the Photo object to its parent, so the parent object has become a complex object. After transformation, we will be able to create/update Pets with a nested Photo object.
-
 
 Next, go to our root directory, and run the following in command line:
 
