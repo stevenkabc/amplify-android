@@ -182,7 +182,9 @@ After CloudFormation completes updating resources in the cloud, you will be give
 
 ## Build the Android Application
 
-Our backend is ready. Let's start using it in our Android app!
+Our backend is ready. Let's start using it in our Android app! 
+
+Before you start, if you haven't already, you should turn on Auto-Import. We are using lots of libraries! To do so, open **Preferences** -> **Editor** -> **General** -> **Auto import** -> check **Add unambiguous imports on the fly**.
 
 **Build** your project to kick off the client code generation process. This gradle build process will create all the native object types which you can use right away.
 
@@ -202,7 +204,7 @@ Open your app's `build.gradle`, and add the following dependencies:
     implementation('com.amazonaws:aws-android-sdk-auth-userpools:2.7.+@aar') { transitive = true }
 
     // Sign in UI Library
-    implementation('com.amazonaws:aws-android-sdk-auth-ui:2.6.+@aar') { transitive = true }
+    implementation('com.amazonaws:aws-android-sdk-auth-ui:2.7.+@aar') { transitive = true }
 ```
 
 Right click on your application directory, select **New** -> **Activity** -> **Empty Activity**. Name your activity `AuthenticationActivity`, check the checkbox **Launcher Activity**, and click **Finish**.
@@ -210,13 +212,6 @@ Right click on your application directory, select **New** -> **Activity** -> **E
 In `AuthenticationActivity.java` class, modify the class to be following:
 
 ```java
-import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
-
-import com.amazonaws.mobile.auth.ui.SignInUI;
-import com.amazonaws.mobile.client.AWSMobileClient;
-import com.amazonaws.mobile.client.AWSStartupHandler;
-import com.amazonaws.mobile.client.AWSStartupResult;
 
 public class AuthenticationActivity extends AppCompatActivity {
 
@@ -287,28 +282,27 @@ We now will need to create an `AWSAppSyncClient` to perform API calls. Add a new
 
 ```java
 
-import android.content.Context;
-
-import com.amazonaws.mobile.auth.core.IdentityManager;
-import com.amazonaws.mobile.auth.userpools.CognitoUserPoolsSignInProvider;
-import com.amazonaws.mobile.config.AWSConfiguration;
-import com.amazonaws.mobileconnectors.appsync.AWSAppSyncClient;
-import com.amazonaws.mobileconnectors.appsync.sigv4.BasicCognitoUserPoolsAuthProvider;
-
 public class ClientFactory {
     private static volatile AWSAppSyncClient client;
 
-    public static AWSAppSyncClient getInstance(Context context) {
+    public static synchronized void init(final Context context) {
         if (client == null) {
-            CognitoUserPoolsSignInProvider cognitoUserPoolsSignInProvider = (CognitoUserPoolsSignInProvider ) IdentityManager.getDefaultIdentityManager().getCurrentIdentityProvider();
-            BasicCognitoUserPoolsAuthProvider basicCognitoUserPoolsAuthProvider = new BasicCognitoUserPoolsAuthProvider(cognitoUserPoolsSignInProvider.getCognitoUserPool());
+            final AWSConfiguration awsConfiguration = new AWSConfiguration(context);
+
+            CognitoUserPoolsSignInProvider cognitoUserPoolsSignInProvider =
+                    (CognitoUserPoolsSignInProvider) IdentityManager.getDefaultIdentityManager().getCurrentIdentityProvider();
+            BasicCognitoUserPoolsAuthProvider basicCognitoUserPoolsAuthProvider =
+                    new BasicCognitoUserPoolsAuthProvider(cognitoUserPoolsSignInProvider.getCognitoUserPool());
 
             client = AWSAppSyncClient.builder()
                     .context(context)
-                    .awsConfiguration(new AWSConfiguration(context))
+                    .awsConfiguration(awsConfiguration)
                     .cognitoUserPoolsAuthProvider(basicCognitoUserPoolsAuthProvider)
                     .build();
         }
+    }
+
+    public static synchronized AWSAppSyncClient appSyncClient() {
         return client;
     }
 }
@@ -373,17 +367,6 @@ Switch to the `Text` view of `recyclerview_row.xml`, and modify the layout as fo
 Since we are using a RecyclerView, we need to provide an Adapter for it. Add a new Java class `MyAdapter.java` as below which extends `RecyclerView.Adapter`:
 
 ```java
-import android.content.Context;
-import android.support.v7.widget.RecyclerView;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.TextView;
-
-import com.amazonaws.amplify.generated.graphql.ListPetsQuery;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
 
@@ -446,29 +429,10 @@ Open `MainActivity.java`, modify the class to implement a `query` method and pop
 
 ```java
 
-import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.util.Log;
-
-import com.amazonaws.amplify.generated.graphql.ListPetsQuery;
-import com.amazonaws.mobileconnectors.appsync.AWSAppSyncClient;
-import com.amazonaws.mobileconnectors.appsync.fetcher.AppSyncResponseFetchers;
-import com.apollographql.apollo.GraphQLCall;
-import com.apollographql.apollo.api.Response;
-import com.apollographql.apollo.exception.ApolloException;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.annotation.Nonnull;
-
 public class MainActivity extends AppCompatActivity {
 
     RecyclerView mRecyclerView;
     MyAdapter mAdapter;
-    AWSAppSyncClient mAWSAppSyncClient;
 
     private ArrayList<ListPetsQuery.Item> mPets;
     private final String TAG = MainActivity.class.getSimpleName();
@@ -486,7 +450,7 @@ public class MainActivity extends AppCompatActivity {
         mAdapter = new MyAdapter(this);
         mRecyclerView.setAdapter(mAdapter);
 
-        mAWSAppSyncClient = ClientFactory.getInstance(this);
+        ClientFactory.init(this);
     }
 
     @Override
@@ -498,7 +462,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void query(){
-        mAWSAppSyncClient.query(ListPetsQuery.builder().build())
+        ClientFactory.appSyncClient().query(ListPetsQuery.builder().build())
                 .responseFetcher(AppSyncResponseFetchers.CACHE_AND_NETWORK)
                 .enqueue(queryCallback);
     }
@@ -529,7 +493,7 @@ public class MainActivity extends AppCompatActivity {
 
 ```
 
-`mAWSAppSyncClient` is responsible for querying the AppSync GraphQL endpoint. We chose to use `CACHE_AND_NETWORK` mode because it will display the data in cache first, while reaching out to the network for latest data. Once the fetch is complete, `queryCallback` is invoked, and our data set is updated with the latest data. There are other Cache or Network only/first modes which can be used depending on different app data fetching needs.
+The `appSyncClient` is responsible for querying the AppSync GraphQL endpoint. We chose to use `CACHE_AND_NETWORK` mode because it will retrieve the data in the local cache first, while reaching out to the network for latest data. Once the fetch is complete, `queryCallback` is invoked again, and our data set is updated with the latest data. There are other Cache or Network only/first modes which can be used depending on different app data fetching needs.
 
 **Build** your app again to ensure there are no errors. A blank screen still displays, but you should be able to see the log in the Logcat window indicating a query is completed successfully, similar to below:
 
@@ -584,23 +548,6 @@ This gives us basic input fields for name and description of our pets.
 Open `AddPetActivity.java`, and add the following code to read the text inputs, create a new Mutation which will create a new Pet.
 
 ```java
-import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.Toast;
-
-import com.amazonaws.amplify.generated.graphql.CreatePetMutation;
-import com.apollographql.apollo.GraphQLCall;
-import com.apollographql.apollo.api.Response;
-import com.apollographql.apollo.exception.ApolloException;
-
-import javax.annotation.Nonnull;
-
-import type.CreatePetInput;
-
 public class AddPetActivity extends AppCompatActivity {
 
     private static final String TAG = AddPetActivity.class.getSimpleName();
@@ -632,7 +579,7 @@ public class AddPetActivity extends AppCompatActivity {
         CreatePetMutation addPetMutation = CreatePetMutation.builder()
                 .input(input)
                 .build();
-        ClientFactory.getInstance(this).mutate(addPetMutation).enqueue(mutateCallback);
+        ClientFactory.appSyncClient().mutate(addPetMutation).enqueue(mutateCallback);
     }
 
     // Mutation callback code
@@ -696,8 +643,6 @@ protected void onCreate(Bundle savedInstanceState) {
               MainActivity.this.startActivity(addPetIntent);
           }
     });
-
-    query();
 }
 
 ```
@@ -724,15 +669,15 @@ Now let's try it out. Open `AddPetActivity.java`, and add the offline support at
 ```java
 
 private void save() {
-        // ... Other code ...
+      // ... Other code ...
 
-        ClientFactory.getInstance(this).mutate(addPetMutation).
-                refetchQueries(ListPetsQuery.builder().build()).
-                enqueue(mutateCallback);
+      ClientFactory.appSyncClient().mutate(addPetMutation).
+              refetchQueries(ListPetsQuery.builder().build()).
+              enqueue(mutateCallback);
 
-        // Enables offline support via an optimistic update
-        // Add to event list while offline or before request returns
-        addPetOffline(input);
+      // Enables offline support via an optimistic update
+      // Add to event list while offline or before request returns
+      addPetOffline(input);
 }
 ```
 
@@ -748,7 +693,7 @@ private void addPetOffline(CreatePetInput input) {
                         input.name(),
                         input.description()));
 
-        final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
+        final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
         final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
 
         final CreatePetMutation.CreatePet createPet = pendingItem.createPet();
@@ -811,7 +756,7 @@ private AppSyncSubscriptionCall subscriptionWatcher;
 
     private void subscribe(){
         OnCreatePetSubscription subscription = OnCreatePetSubscription.builder().build();
-        subscriptionWatcher = mAWSAppSyncClient.subscribe(subscription);
+        subscriptionWatcher = ClientFactory.appSyncClient().subscribe(subscription);
         subscriptionWatcher.execute(subCallback);
     }
 
@@ -845,14 +790,12 @@ private AppSyncSubscriptionCall subscriptionWatcher;
     };
 ```
 
-Then let's modify the `OnCreate` method to call `subscribe` to new pet creations, also making sure we unsubscribe when we are done:
+Then let's modify the `OnCreate` method to call `subscribe` at the end to new pet creations, also making sure we unsubscribe when we are done:
 
 ```java
 @Override
 protected void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_main);
-
+    
     // ...other code omitted...
 
     subscribe();
@@ -1004,8 +947,6 @@ private String storageBucketName;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_add_pet);
 
-        AWSMobileClient.getInstance().initialize(this).execute();
-
         Button btnAddItem = findViewById(R.id.btn_save);
         btnAddItem.setOnClickListener(new View.OnClickListener() {
 
@@ -1037,7 +978,9 @@ private String storageBucketName;
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    Toast.makeText(AddPetActivity.this, "Error: Can't find S3 bucket. \nHave you run 'amplify add storage'? ", Toast.LENGTH_LONG).show();
+                    Toast.makeText(AddPetActivity.this, 
+                                  "Error: Can't find S3 bucket. \nHave you run 'amplify add storage'? ", 
+                                  Toast.LENGTH_LONG).show();
                 }
             });
         }
@@ -1054,29 +997,28 @@ Here we will leverage `TransferUtility` to handle the S3 file upload and downloa
 ```java
 
 private static volatile TransferUtility transferUtility;
-public static TransferUtility getTransferUtility(Context context) {
+public static synchronized void init(final Context context) {
+    // ... appsyncClient initialization code ...
+
     if (transferUtility == null) {
-        transferUtility = TransferUtility.builder()
-                .context(context)
-                .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
-                .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
-                .build();
+        if (transferUtility == null) {
+            transferUtility = TransferUtility.builder()
+                    .context(context)
+                    .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
+                    .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
+                    .build();
+        }
     }
-    return transferUtility;
+}
+public static synchronized TransferUtility transferUtility() {
+        return transferUtility;
 }
 
 ```
 
-Next, let's add code to upload the photo leveraging the AWSMobileClient. 
+Next, let's add code to upload the photo leveraging the TransferUtility in our `AddPetActivity.java`:
 
 ```java
-protected void onCreate(Bundle savedInstanceState) {
-
-    //...other code...
-
-    //Add this line at the end of method to initialize the AWSMobileClient
-    AWSMobileClient.getInstance().initialize(this).execute();
-}
 
 private String getS3Key(String localPath) {
     //We have read and write ability under the public folder
@@ -1089,7 +1031,7 @@ public void uploadWithTransferUtility(String localPath) {
     Log.d(TAG, "Uploading file from " + localPath + " to " + key);
 
     TransferObserver uploadObserver =
-            ClientFactory.getTransferUtility(this).upload(
+            ClientFactory.transferUtility().upload(
                     key,
                     new File(localPath));
 
@@ -1138,7 +1080,7 @@ public void uploadWithTransferUtility(String localPath) {
 
 In order to handle saving photo elegantly, we need to refactor our code a little to accommodate the addition of a complex object.
 
-Extract the following method to produce different types of `CreatePetInput`s depending on whether a photo has been selected:
+In `AddPetActivity.java`, extract the following method to produce different types of `CreatePetInput`s depending on whether a photo has been selected:
 
 ```java
 private CreatePetInput getCreatePetInput() {
@@ -1341,7 +1283,7 @@ private void downloadWithTransferUtility(final ListPetsQuery.Item item) {
             Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + "/" + item.photo().key();
 
     TransferObserver downloadObserver =
-            ClientFactory.getTransferUtility(this).download(
+            ClientFactory.transferUtility().download(
                     item.photo().key(),
                     new File(localPath));
 
@@ -1387,65 +1329,66 @@ private void downloadWithTransferUtility(final ListPetsQuery.Item item) {
 
 ```
 
-Lastly, let's update our offline code to display a photo even before it's uploaded fully. In `AddPetActivity.java`, modify `addPetOffline` as follows:
+Lastly, let's update our offline code to display a photo even before it's uploaded fully. 
+In `AddPetActivity.java`, modify `addPetOffline` as follows:
 
 ```java
 private void addPetOffline(final CreatePetInput input) {
 
-        final CreatePetMutation.CreatePet expected =
-                new CreatePetMutation.CreatePet(
-                        "Pet",
-                        UUID.randomUUID().toString(),
-                        input.name(),
-                        input.description(),
-                        input.photo() != null?
-                                new CreatePetMutation.Photo(
-                                        "Photo",
-                                        input.photo().bucket(),
-                                        input.photo().key(),
-                                        input.photo().region(),
-                                        photoPath,
-                                        input.photo().mimeType())
-                                : null);
+  final CreatePetMutation.CreatePet expected =
+          new CreatePetMutation.CreatePet(
+                  "Pet",
+                  UUID.randomUUID().toString(),
+                  input.name(),
+                  input.description(),
+                  input.photo() != null?
+                          new CreatePetMutation.Photo(
+                                  "Photo",
+                                  input.photo().bucket(),
+                                  input.photo().key(),
+                                  input.photo().region(),
+                                  photoPath,
+                                  input.photo().mimeType())
+                          : null);
 
-        final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
-        final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
+  final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
+  final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
 
-        awsAppSyncClient.query(listEventsQuery)
-                .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
-                .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
-                    @Override
-                    public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
-                        List<ListPetsQuery.Item> items = new ArrayList<>();
-                        if (response.data() != null) {
-                            items.addAll(response.data().listPets().items());
-                        }
+  awsAppSyncClient.query(listEventsQuery)
+          .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
+          .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
+              @Override
+              public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+                  List<ListPetsQuery.Item> items = new ArrayList<>();
+                  if (response.data() != null) {
+                      items.addAll(response.data().listPets().items());
+                  }
 
-                        items.add(new ListPetsQuery.Item(expected.__typename(),
-                                expected.id(),
-                                expected.name(),
-                                expected.description(),
-                                expected.photo() != null ? new ListPetsQuery.Photo(
-                                        "Photo",
-                                        input.photo().bucket(),
-                                        input.photo().key(),
-                                        input.photo().region(),
-                                        photoPath,
-                                        input.photo().mimeType()) : null
-                                ));
-                        ListPetsQuery.Data data = new ListPetsQuery.Data(
-                                new ListPetsQuery.ListPets("ListPets", items, null));
-                        awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
-                        Log.d(TAG, "Successfully wrote item to local store while being offline.");
+                  items.add(new ListPetsQuery.Item(expected.__typename(),
+                          expected.id(),
+                          expected.name(),
+                          expected.description(),
+                          expected.photo() != null ? new ListPetsQuery.Photo(
+                                  "Photo",
+                                  input.photo().bucket(),
+                                  input.photo().key(),
+                                  input.photo().region(),
+                                  photoPath,
+                                  input.photo().mimeType()) : null
+                          ));
+                  ListPetsQuery.Data data = new ListPetsQuery.Data(
+                          new ListPetsQuery.ListPets("ListPets", items, null));
+                  awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
+                  Log.d(TAG, "Successfully wrote item to local store while being offline.");
 
-                        finishIfOffline();
-                    }
+                  finishIfOffline();
+              }
 
-                    @Override
-                    public void onFailure(@Nonnull ApolloException e) {
-                        Log.e(TAG, "Failed to update event query list.", e);
-                    }
-                });
+              @Override
+              public void onFailure(@Nonnull ApolloException e) {
+                  Log.e(TAG, "Failed to update event query list.", e);
+              }
+          });
     }
 
 ```
@@ -1463,6 +1406,7 @@ There are other enhancements we can make to the app. Try to work on the followin
 - Add ability to delete a pet
 - Subscribe to update and delete mutations
 - Add pagination when there are more than 1 page of pets to display
+- As the app gets more complex, refactor appsyncClient operations to a separate class
 
 
 ## Removing Services

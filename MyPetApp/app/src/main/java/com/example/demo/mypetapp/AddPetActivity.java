@@ -88,7 +88,9 @@ public class AddPetActivity extends AppCompatActivity {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    Toast.makeText(AddPetActivity.this, "Error: Can't find S3 bucket or region. \nHave you run 'amplify add storage'? ", Toast.LENGTH_LONG).show();
+                    Toast.makeText(AddPetActivity.this,
+                            "Error: Can't find S3 bucket or region. \nHave you run 'amplify add storage'? ",
+                            Toast.LENGTH_LONG).show();
                 }
             });
         }
@@ -174,7 +176,7 @@ public class AddPetActivity extends AppCompatActivity {
                 .input(input)
                 .build();
 
-        ClientFactory.getInstance(this).mutate(addPetMutation).
+        ClientFactory.appSyncClient().mutate(addPetMutation).
                 refetchQueries(ListPetsQuery.builder().build()).
                 enqueue(mutateCallback);
 
@@ -228,7 +230,7 @@ public class AddPetActivity extends AppCompatActivity {
                                 : null);
 
 
-        final AWSAppSyncClient awsAppSyncClient = ClientFactory.getInstance(this);
+        final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
         final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
 
         awsAppSyncClient.query(listEventsQuery)
@@ -294,7 +296,7 @@ public class AddPetActivity extends AppCompatActivity {
         Log.d(TAG, "Uploading file from " + localPath + " to " + key);
 
         TransferObserver uploadObserver =
-                ClientFactory.getTransferUtility(this).upload(
+                ClientFactory.transferUtility().upload(
                         key,
                         new File(localPath));
 

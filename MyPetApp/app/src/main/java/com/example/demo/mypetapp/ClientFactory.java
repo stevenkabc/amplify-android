@@ -15,28 +15,38 @@ public class ClientFactory {
     private static volatile AWSAppSyncClient client;
     private static volatile TransferUtility transferUtility;
 
-    public static AWSAppSyncClient getInstance(Context context) {
+    public static synchronized void init(final Context context) {
         if (client == null) {
-            CognitoUserPoolsSignInProvider cognitoUserPoolsSignInProvider = (CognitoUserPoolsSignInProvider) IdentityManager.getDefaultIdentityManager().getCurrentIdentityProvider();
-            BasicCognitoUserPoolsAuthProvider basicCognitoUserPoolsAuthProvider = new BasicCognitoUserPoolsAuthProvider(cognitoUserPoolsSignInProvider.getCognitoUserPool());
+            final AWSConfiguration awsConfiguration = new AWSConfiguration(context);
+
+            CognitoUserPoolsSignInProvider cognitoUserPoolsSignInProvider =
+                    (CognitoUserPoolsSignInProvider) IdentityManager.getDefaultIdentityManager().getCurrentIdentityProvider();
+            BasicCognitoUserPoolsAuthProvider basicCognitoUserPoolsAuthProvider =
+                    new BasicCognitoUserPoolsAuthProvider(cognitoUserPoolsSignInProvider.getCognitoUserPool());
 
             client = AWSAppSyncClient.builder()
                     .context(context)
-                    .awsConfiguration(new AWSConfiguration(context))
+                    .awsConfiguration(awsConfiguration)
                     .cognitoUserPoolsAuthProvider(basicCognitoUserPoolsAuthProvider)
                     .build();
         }
+
+        if (transferUtility == null) {
+            if (transferUtility == null) {
+                transferUtility = TransferUtility.builder()
+                        .context(context)
+                        .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
+                        .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
+                        .build();
+            }
+        }
+    }
+
+    public static synchronized AWSAppSyncClient appSyncClient() {
         return client;
     }
 
-    public static TransferUtility getTransferUtility(Context context) {
-        if (transferUtility == null) {
-            transferUtility = TransferUtility.builder()
-                    .context(context)
-                    .awsConfiguration(AWSMobileClient.getInstance().getConfiguration())
-                    .s3Client(new AmazonS3Client(AWSMobileClient.getInstance().getCredentialsProvider()))
-                    .build();
-        }
+    public static synchronized TransferUtility transferUtility() {
         return transferUtility;
     }
 }

@@ -14,5 +14,15 @@ type Pet @model {
   id: ID!
   name: String!
   description: String
+  photo: S3Object
 }
+
+type S3Object {
+  bucket: String!
+  key: String!
+  region: String!
+  localUri: String
+  mimeType: String
+}
+
 ```

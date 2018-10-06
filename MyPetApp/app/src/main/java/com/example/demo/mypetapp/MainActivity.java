@@ -36,7 +36,6 @@ public class MainActivity extends AppCompatActivity {
 
     RecyclerView mRecyclerView;
     MyAdapter mAdapter;
-    AWSAppSyncClient mAWSAppSyncClient;
 
     private ArrayList<ListPetsQuery.Item> mPets;
     private final String TAG = MainActivity.class.getSimpleName();
@@ -54,9 +53,7 @@ public class MainActivity extends AppCompatActivity {
         mAdapter = new MyAdapter(this);
         mRecyclerView.setAdapter(mAdapter);
 
-        mAWSAppSyncClient = ClientFactory.getInstance(this);
-
-        AWSMobileClient.getInstance().initialize(this).execute();
+        ClientFactory.init(this);
 
         FloatingActionButton btnAddPet = findViewById(R.id.btn_addPet);
         btnAddPet.setOnClickListener(new View.OnClickListener() {
@@ -86,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void query(){
-        mAWSAppSyncClient.query(ListPetsQuery.builder().build())
+        ClientFactory.appSyncClient().query(ListPetsQuery.builder().build())
                 .responseFetcher(AppSyncResponseFetchers.CACHE_AND_NETWORK)
                 .enqueue(queryCallback);
     }
@@ -126,7 +123,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void subscribe(){
         OnCreatePetSubscription subscription = OnCreatePetSubscription.builder().build();
-        subscriptionWatcher = mAWSAppSyncClient.subscribe(subscription);
+        subscriptionWatcher = ClientFactory.appSyncClient().subscribe(subscription);
         subscriptionWatcher.execute(subCallback);
     }
 
@@ -177,7 +174,7 @@ public class MainActivity extends AppCompatActivity {
                 Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + "/" + item.photo().key();
 
         TransferObserver downloadObserver =
-                ClientFactory.getTransferUtility(this).download(
+                ClientFactory.transferUtility().download(
                         item.photo().key(),
                         new File(localPath));
 
