@@ -247,14 +247,31 @@ Now let's make sure the Authentication activity is our launcher activity. Open `
     android:label="@string/app_name">
 </activity>
 <activity
-    android:name=".AuthenticationActivity"
-    android:theme="@style/AppTheme.NoActionBar">
+    android:name=".AuthenticationActivity">
     <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
     </intent-filter>
 </activity>
 
+```
+
+Lastly, let's modify `activity_main.xml` and **delete** the code related to the AppBarLayout:
+
+```xml
+ <android.support.design.widget.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:theme="@style/AppTheme.AppBarOverlay">
+
+        <android.support.v7.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorPrimary"
+            app:popupTheme="@style/AppTheme.PopupOverlay" />
+
+    </android.support.design.widget.AppBarLayout>
 ```
 
 Build and launch your app in your emulator. The SignIn UI shows up as follows:
@@ -320,7 +337,14 @@ We don't have any data in our list yet, but let's build the capacity to display 
 
 Now let's start building our app to allow display of items!
 
-Open `src/res/layout/content_main.xml`, switch to `Text` view, and replace the `<TextView>` with the following:
+We'll use `RecyclerView` to display data. First let's add the dependency for design components into the `build.gradle`:
+
+```
+dependencies {
+    implementation 'com.android.support:design:28.0.0'
+```
+
+Next, open `src/res/layout/activity_main.xml`, switch to `Text` view, and replace the `<TextView>` with the following:
 
 ```java
 <android.support.v7.widget.RecyclerView
@@ -370,7 +394,7 @@ Since we are using a RecyclerView, we need to provide an Adapter for it. Add a n
 
 public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
 
-    private ArrayList<ListPetsQuery.Item> mData = new ArrayList<>();;
+    private List<ListPetsQuery.Item> mData = new ArrayList<>();;
     private LayoutInflater mInflater;
 
 
@@ -612,7 +636,7 @@ public class AddPetActivity extends AppCompatActivity {
 
 Now let's connect the `AddPetActivity` to our `MainActivity`.
 
-Open layout file `activity_main.xml`, replace the floating button with the following:
+Open layout file `activity_main.xml`, replace the floating button after the `RecyclerView` with below:
 
 ```xml
 <android.support.design.widget.FloatingActionButton
@@ -686,44 +710,44 @@ Now let's add the `addPetOffline` method. We check for connectivity after writin
 ```java
 private void addPetOffline(CreatePetInput input) {
 
-        CreatePetMutation.Data expected = new CreatePetMutation.Data(
-                new CreatePetMutation.CreatePet(
-                        "Pet",
-                        UUID.randomUUID().toString(),
-                        input.name(),
-                        input.description()));
+  final CreatePetMutation.CreatePet expected =
+          new CreatePetMutation.CreatePet(
+                  "Pet",
+                  UUID.randomUUID().toString(),
+                  input.name(),
+                  input.description());
+                  
 
-        final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
-        final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
+  final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
+  final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
+  
 
-        final CreatePetMutation.CreatePet createPet = pendingItem.createPet();
+  awsAppSyncClient.query(listEventsQuery)
+          .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
+          .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
+              @Override
+              public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+                  List<ListPetsQuery.Item> items = new ArrayList<>();
+                  if (response.data() != null) {
+                      items.addAll(response.data().listPets().items());
+                  }
 
-        awsAppSyncClient.query(listEventsQuery)
-                .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
-                .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
-                    @Override
-                    public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
-                        List<ListPetsQuery.Item> items = new ArrayList<>();
-                        if (response.data() != null) {
-                            items.addAll(response.data().listPets().items());
-                        }
+                  items.add(new ListPetsQuery.Item(expected.__typename(),
+                          expected.id(),
+                          expected.name(),
+                          expected.description()));
+                  ListPetsQuery.Data data = new ListPetsQuery.Data(new ListPetsQuery.ListPets("ListPets", items, null));
+                  awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
+                  Log.d(TAG, "Successfully wrote item to local store while being offline.");
 
-                        items.add(new ListPetsQuery.Item(createPet.__typename(),
-                                createPet.id(),
-                                createPet.name(),
-                                createPet.description()));
-                        ListPetsQuery.Data data = new ListPetsQuery.Data(new ListPetsQuery.ListPets("ListPets", items, null));
-                        awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
-                        Log.d(TAG, "Successfully wrote item to local store while being offline.");
+                  finishIfOffline();
+              }
 
-                        finishIfOffline();
-                    }
-
-                    @Override
-                    public void onFailure(@Nonnull ApolloException e) {
-                        Log.e(TAG, "Failed to update event query list.", e);
-                    }
-                });
+              @Override
+              public void onFailure(@Nonnull ApolloException e) {
+                  Log.e(TAG, "Failed to update event query list.", e);
+              }
+          });
     }
 
     private void finishIfOffline(){
@@ -745,7 +769,7 @@ private void addPetOffline(CreatePetInput input) {
 
 We don't need to change `MainActivity` because its `query()` method uses the `CACHE_AND_NETWORK` approach. It reads from the local cache first while making a network call, and our previously added pet already exists in the local cache via optimistic update.
 
-Build and run the app. Turn Airplane mode on to see how the UI responds when adding a new item. Turn Airplane mode off, and you should see the mutation being sent to the server automatically. 
+Build and run the app. After you sign in, turn Airplane mode on to see how the UI responds when adding a new item. Turn Airplane mode off, and you should see the mutation being sent to the server automatically. 
 
 ### Subscriptions
 
@@ -790,15 +814,15 @@ private AppSyncSubscriptionCall subscriptionWatcher;
     };
 ```
 
-Then let's modify the `OnCreate` method to call `subscribe` at the end to new pet creations, also making sure we unsubscribe when we are done:
+Then let's modify the `onResume` method to call `subscribe` at the end to new pet creations, also making sure we unsubscribe when we are done with the Activity:
 
 ```java
-@Override
-protected void onCreate(Bundle savedInstanceState) {
-    
-    // ...other code omitted...
+ @Override
+  public void onResume() {
+      super.onResume();
 
-    subscribe();
+      query();
+      subscribe();
 }
 
 @Override
@@ -941,6 +965,7 @@ Now let's connect this button to our `choosePhoto()` method. Go back to `AddPetA
 ```java
 
 private String storageBucketName;
+private String region;
 
 @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -973,6 +998,7 @@ private String storageBucketName;
                 .optJsonObject("S3TransferUtility");
         try {
             storageBucketName = s3Config.getString("Bucket");
+            region = s3Config.getString("Region");
         } catch (JSONException e) {
             Log.e(TAG, "Can't find S3 bucket", e);
             runOnUiThread(new Runnable() {
@@ -1093,7 +1119,7 @@ private CreatePetInput getCreatePetInput() {
                 .key(getS3Key(photoPath))
                 .region(region)
                 .localUri(photoPath)
-                .mimeType(JPG_MIME).build();
+                .mimeType("image/jpg").build();
 
         return CreatePetInput.builder()
                 .name(name)
@@ -1119,7 +1145,7 @@ private void save() {
             .input(input)
             .build();
 
-    ClientFactory.getInstance(this).mutate(addPetMutation).
+    ClientFactory.appSyncClient().mutate(addPetMutation).
             refetchQueries(ListPetsQuery.builder().build()).
             enqueue(mutateCallback);
 
@@ -1127,6 +1153,104 @@ private void save() {
     // Add to event list while offline or before request returns
     addPetOffline(input);
 }
+```
+
+Because we have changed how the mutation works, we need to modify the `addPetOffline` code as well:
+
+```java
+private void addPetOffline(final CreatePetInput input) {
+
+  final CreatePetMutation.CreatePet expected =
+          new CreatePetMutation.CreatePet(
+                  "Pet",
+                  UUID.randomUUID().toString(),
+                  input.name(),
+                  input.description(),
+                  input.photo() != null?
+                          new CreatePetMutation.Photo(
+                                  "Photo",
+                                  input.photo().bucket(),
+                                  input.photo().key(),
+                                  input.photo().region(),
+                                  photoPath,
+                                  input.photo().mimeType())
+                          : null);
+
+  final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
+  final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
+
+  awsAppSyncClient.query(listEventsQuery)
+          .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
+          .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
+              @Override
+              public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
+                  List<ListPetsQuery.Item> items = new ArrayList<>();
+                  if (response.data() != null) {
+                      items.addAll(response.data().listPets().items());
+                  }
+
+                  items.add(new ListPetsQuery.Item(expected.__typename(),
+                          expected.id(),
+                          expected.name(),
+                          expected.description(),
+                          expected.photo() != null ? new ListPetsQuery.Photo(
+                                  "Photo",
+                                  input.photo().bucket(),
+                                  input.photo().key(),
+                                  input.photo().region(),
+                                  photoPath,
+                                  input.photo().mimeType()) : null
+                          ));
+                  ListPetsQuery.Data data = new ListPetsQuery.Data(
+                          new ListPetsQuery.ListPets("ListPets", items, null));
+                  awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
+                  Log.d(TAG, "Successfully wrote item to local store while being offline.");
+
+                  finishIfOffline();
+              }
+
+              @Override
+              public void onFailure(@Nonnull ApolloException e) {
+                  Log.e(TAG, "Failed to update event query list.", e);
+              }
+          });
+    }
+```
+
+We also have to update the subscription callback because of the newly added photo object:
+
+```java
+private AppSyncSubscriptionCall.Callback subCallback = new AppSyncSubscriptionCall.Callback() {
+        @Override
+        public void onResponse(@Nonnull Response response) {
+            Log.i("Response", "Received subscription notification: " + response.data().toString());
+
+            // Update UI with the newly added item
+            OnCreatePetSubscription.OnCreatePet data = ((OnCreatePetSubscription.Data)response.data()).onCreatePet();
+            final ListPetsQuery.Item addedItem = new ListPetsQuery.Item(
+                    data.__typename(),
+                    data.id(),
+                    data.name(),
+                    data.description(),
+                    data.photo() != null ? new ListPetsQuery.Photo(
+                            "Photo",
+                            data.photo().bucket(),
+                            data.photo().key(),
+                            data.photo().region(),
+                            data.photo().localUri(),
+                            data.photo().mimeType()) : null);
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mPets.add(addedItem);
+                    mAdapter.notifyItemInserted(mPets.size() - 1);
+                }
+            });
+        }
+        //...other event handlers...
+}
+
 ```
 
 Then we can create a new method `uploadAndSave()` to handle both the photo and photo-less saves:
@@ -1182,25 +1306,28 @@ Open `recyclerview_row.xml`, add an `<ImageView>` and modify the layout as follo
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="10dp">
+    android:padding="10dp"
+    android:weightSum="100">
 
     <ImageView
         android:id="@+id/image_view"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="match_parent"
         android:maxHeight="200dp"
-        android:paddingRight="50dp"/>
+        android:layout_weight="30"
+        />
 
     <LinearLayout
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_weight="70"
+        android:layout_marginTop="10dp">
 
         <TextView
             android:id="@+id/txt_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
             android:textSize="15dp"
             android:paddingLeft="10dp" />
 
@@ -1208,7 +1335,6 @@ Open `recyclerview_row.xml`, add an `<ImageView>` and modify the layout as follo
             android:id="@+id/txt_description"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
             android:textSize="15dp"
             android:paddingLeft="10dp" />
     </LinearLayout>
@@ -1262,7 +1388,7 @@ private GraphQLCall.Callback<ListPetsQuery.Data> queryCallback = new GraphQLCall
 
         for (ListPetsQuery.Item item : mPets){
             // We only download the file if this callback is triggered by a network call
-            if (!response.fromCache() && item.photo() != null && item.photo().localUri() == null) {
+            if (!response.fromCache() && item.photo() != null) {
                 downloadWithTransferUtility(item);
             }
         }
@@ -1326,70 +1452,6 @@ private void downloadWithTransferUtility(final ListPetsQuery.Item item) {
         }
     });
 }
-
-```
-
-Lastly, let's update our offline code to display a photo even before it's uploaded fully. 
-In `AddPetActivity.java`, modify `addPetOffline` as follows:
-
-```java
-private void addPetOffline(final CreatePetInput input) {
-
-  final CreatePetMutation.CreatePet expected =
-          new CreatePetMutation.CreatePet(
-                  "Pet",
-                  UUID.randomUUID().toString(),
-                  input.name(),
-                  input.description(),
-                  input.photo() != null?
-                          new CreatePetMutation.Photo(
-                                  "Photo",
-                                  input.photo().bucket(),
-                                  input.photo().key(),
-                                  input.photo().region(),
-                                  photoPath,
-                                  input.photo().mimeType())
-                          : null);
-
-  final AWSAppSyncClient awsAppSyncClient = ClientFactory.appSyncClient();
-  final ListPetsQuery listEventsQuery = ListPetsQuery.builder().build();
-
-  awsAppSyncClient.query(listEventsQuery)
-          .responseFetcher(AppSyncResponseFetchers.CACHE_ONLY)
-          .enqueue(new GraphQLCall.Callback<ListPetsQuery.Data>() {
-              @Override
-              public void onResponse(@Nonnull Response<ListPetsQuery.Data> response) {
-                  List<ListPetsQuery.Item> items = new ArrayList<>();
-                  if (response.data() != null) {
-                      items.addAll(response.data().listPets().items());
-                  }
-
-                  items.add(new ListPetsQuery.Item(expected.__typename(),
-                          expected.id(),
-                          expected.name(),
-                          expected.description(),
-                          expected.photo() != null ? new ListPetsQuery.Photo(
-                                  "Photo",
-                                  input.photo().bucket(),
-                                  input.photo().key(),
-                                  input.photo().region(),
-                                  photoPath,
-                                  input.photo().mimeType()) : null
-                          ));
-                  ListPetsQuery.Data data = new ListPetsQuery.Data(
-                          new ListPetsQuery.ListPets("ListPets", items, null));
-                  awsAppSyncClient.getStore().write(listEventsQuery, data).enqueue(null);
-                  Log.d(TAG, "Successfully wrote item to local store while being offline.");
-
-                  finishIfOffline();
-              }
-
-              @Override
-              public void onFailure(@Nonnull ApolloException e) {
-                  Log.e(TAG, "Failed to update event query list.", e);
-              }
-          });
-    }
 
 ```
 

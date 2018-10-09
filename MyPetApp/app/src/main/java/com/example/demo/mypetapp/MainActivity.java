@@ -64,8 +64,6 @@ public class MainActivity extends AppCompatActivity {
                 MainActivity.this.startActivity(addPetIntent);
             }
         });
-
-        subscribe();
     }
 
     @Override
@@ -80,6 +78,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Refresh the list data when we return to the screen
         query();
+        subscribe();
     }
 
     public void query(){
@@ -107,7 +106,7 @@ public class MainActivity extends AppCompatActivity {
 
             for (ListPetsQuery.Item item : mPets) {
                 // We only download the file if this callback is triggered by a network call
-                if (!response.fromCache() && item.photo() != null && item.photo().localUri() == null) {
+                if (!response.fromCache() && item.photo() != null) {
                     downloadWithTransferUtility(item);
                 }
             }

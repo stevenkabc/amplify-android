@@ -47,8 +47,8 @@ import type.S3ObjectInput;
 public class AddPetActivity extends AppCompatActivity {
 
     private static final String TAG = AddPetActivity.class.getSimpleName();
-    private static final String JPG_MIME = "image/jpg";
     private String storageBucketName;
+
     private String region;
 
     @Override
@@ -152,7 +152,7 @@ public class AddPetActivity extends AppCompatActivity {
                     .bucket(storageBucketName)
                     .key(getS3Key(photoPath))
                     .region(region)
-                    .mimeType(JPG_MIME)
+                    .mimeType("image/jpg")
                     .build();
 
             return CreatePetInput.builder()
