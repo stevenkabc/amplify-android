@@ -256,9 +256,10 @@ Now let's make sure the Authentication activity is our launcher activity. Open `
 
 ```
 
-Lastly, let's modify `activity_main.xml` and **delete** the code related to the AppBarLayout:
+Lastly, let's modify `activity_main.xml` and `MainActivity.java` and **delete** the code related to the AppBarLayout:
 
 ```xml
+ <!-- Delete me -->
  <android.support.design.widget.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -272,6 +273,17 @@ Lastly, let's modify `activity_main.xml` and **delete** the code related to the 
             app:popupTheme="@style/AppTheme.PopupOverlay" />
 
     </android.support.design.widget.AppBarLayout>
+```
+
+```java
+public class MainActivity extends AppCompatActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+       
+        // Delete these 2 lines
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+    }
 ```
 
 Build and launch your app in your emulator. The SignIn UI shows up as follows:
@@ -337,14 +349,7 @@ We don't have any data in our list yet, but let's build the capacity to display 
 
 Now let's start building our app to allow display of items!
 
-We'll use `RecyclerView` to display data. First let's add the dependency for design components into the `build.gradle`:
-
-```
-dependencies {
-    implementation 'com.android.support:design:28.0.0'
-```
-
-Next, open `src/res/layout/activity_main.xml`, switch to `Text` view, and replace the `<TextView>` with the following:
+We'll use `RecyclerView` to display data. Open `src/res/layout/activity_main.xml`, switch to `Text` view, and replace the `<TextView>` with the following:
 
 ```java
 <android.support.v7.widget.RecyclerView
