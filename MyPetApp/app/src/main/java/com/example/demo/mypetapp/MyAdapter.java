@@ -41,6 +41,8 @@ public class MyAdapter extends RecyclerView.Adapter<MyAdapter.ViewHolder> {
 
         if (item.photo() != null && item.photo().localUri() != null)
             holder.image_view.setImageBitmap(BitmapFactory.decodeFile(item.photo().localUri()));
+        else
+            holder.image_view.setImageBitmap(null);
     }
 
     // total number of rows
